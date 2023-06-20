@@ -25,15 +25,33 @@ from statsmodels.stats.multitest import multipletests
 
 #set_cmdstan_path('/rtsess01/juno/home/xiea1/miniconda3/envs/cmdstanpy/bin/cmdstan')
 
-def load_data(raw_data_path, start_index, iso_index):
+def load_data(raw_data_path, start_index, iso_index, drop_first = False):
+    '''
+    The original spatial MSI data is formatted as: x, y, metab_1 m+00, metab_1 m+01, ...
+
+    Paramters:
+        - start_index: the column index in the file where the isotopolouge data starts
+        - iso_index: number of characters (starting from end of string) that contains the number of the isotopolouge (e.g. Glucose' m+04') 
+    '''
+    # import data
     data = pd.read_csv(raw_data_path, header=0)
     #  subset data
-    #data = data.loc[data['x'] == 92]
+    # If first column is unnamed id 
+    if drop_first:
+        data = data.iloc[: , 1:]
+    # If a column is all 0, remove it 
     data = data.loc[:,list(data.sum(axis=0)!=0)]
 
-    # drop metabolites that are not labeled at all (only have m+0)
+    # drop metabolites that are not labeled at all (only have m+00)
     # Count the number of isotopologues for each metabolite
     def count_drop_metabolites(data, start_index, iso_index):
+        '''
+        Returns:
+            - data: the original data with m+00 only metabs dropped
+            - K (list): list containing isotopolouge counts for each metabolite (e.g. iso counts for 5 metabolites: [3, 4, 3, 6, 5])
+            - metabolite_count (dict): dictionary with metabolites as keys and number of isotopolouges as values
+            - metabolite_map (dict): dictionary with metabolites as keys and their positional index as values. (i.e. which metabolite should come first, second, etc.)
+        '''
         # setup initial values
         count = 1
         K = []
@@ -56,23 +74,33 @@ def load_data(raw_data_path, start_index, iso_index):
 
     data, K, metabolite_count, metabolite_map = count_drop_metabolites(data, start_index, iso_index)
 
-    # collect meta data
+    # collect meta data (the coordinates x, y)
     meta_data = data.iloc[:, :start_index]
     data = data.iloc[:, start_index:]
     iso_names = data.columns
+    # iso_map is same as metabolite_map but wth isotopolouges
     iso_map = {s: i for i, s in enumerate(iso_names)}
     data = data.to_numpy()
 
     return data, meta_data, iso_names, iso_map, K, metabolite_count, metabolite_map
 
 def tic_normalization(data):
+    '''
+    Total Ion-count normalization - everyone does this for metabolomic data 
+         - https://skyline.ms/announcements/home/support/thread.view?rowId=51154#:~:text=The%20%22Total%20Ion%20Current%22%20normalization,would%20not%20see%20any%20results.
+    Sums up all the values in the row and divide each value in row by this sum
+    '''
+    # Replace 0s with Nans
     normalized_data = np.where(data == 0, np.nan, data)
-    # replace 0 with half of the minimum value
+    # Replace Nans with half of the minimum value
     normalized_data = np.where(np.isnan(normalized_data), np.nanmin(normalized_data, axis=0)/2, normalized_data)
+    # Total Ion Count Normalization
     normalized_data = normalized_data / np.sum(normalized_data, axis=1, keepdims=True) * 100000
     return normalized_data
 
-def generate_stan_data(data, K, n_dims):
+def generate_data(data, K, n_dims):
+    '''
+    '''
     N = data.shape[0]  # samples
     J = len(K)  # metabolites
     L = n_dims  # embedding dimensions of W and H
@@ -81,9 +109,20 @@ def generate_stan_data(data, K, n_dims):
     Z = data.shape[1]  # isotopologues
 
     def count_YX_generator(data, N, J, K):
+        '''
+        Generates total ion count matrix Y by summing up the isotopolouges for each metabolite.
+
+        Returns: 
+            - X: Isotopolouge matrix of isotopolouge proportions
+            - Y: Total Ion Count Matrix
+            - start_col (list): list of column index where each metabolite starts in X
+            - end_col (list): list of column index where each metabolite ends in X
+
+        '''
         start_col = np.zeros(shape=J, dtype=int)
         stop_col = np.zeros(shape=J, dtype=int)
         start = 0
+        # Y is metabolite, X is isotopolouges
         Y = np.zeros(shape=(N, J))
         X = np.zeros(shape=(N, Z))
 
@@ -91,11 +130,12 @@ def generate_stan_data(data, K, n_dims):
             start_col[j] = start
             stop_col[j] = start_col[j] + K[j]
             Y[:, j] = np.sum(data[:, start_col[j]:stop_col[j]], axis=1)
-            # ALR Transformation
-            X[:, (start_col[j]+1):stop_col[j]] = np.log(data[:, (start_col[j]+1):stop_col[j]] / data[:, start_col[j]].reshape((-1, 1)))
+            # ALR Transformation - switch from raw isotopolouge counts to proportions in that metabolite
+            # Not ALR anymore, just proportions
+            X[:, (start_col[j]):stop_col[j]] = data[:, (start_col[j]):stop_col[j]] / np.sum(data[:, (start_col[j]):stop_col[j]], axis=1, keepdims=True)
             start = stop_col[j]
         # Log transformation of the total ion counts Y (to make the data look normal)
-        # Y = np.log(Y)
+        Y = np.log(Y)
         return start_col, stop_col, Y, X
 
     start_col, stop_col, Y, X = count_YX_generator(data, N, J, K)
@@ -131,7 +171,7 @@ def main():
     censor_indicator = np.where(data == 0, 1, 0)  # 1 means censored, 0 means not censored
     # TIC normalization
     normalized_data = tic_normalization(data)
-    N, J, Z, L, start_col, stop_col, Y, X = generate_stan_data(normalized_data, K, n_dims)
+    N, J, Z, L, start_col, stop_col, Y, X = generate_data(normalized_data, K, n_dims)
 
 
     Y = np.log(Y)
@@ -143,6 +183,7 @@ def main():
     pd.concat([pd.DataFrame(Y, columns=list(metabolite_map.keys())), meta_data],axis=1).to_csv(f'{results_dir}/FML_kidney_glucose_M3_ranked_Y.csv')
     pd.concat([pd.DataFrame(X, columns=list(iso_names)), meta_data],axis=1).to_csv(f'{results_dir}/FML_kidney_glucose_M3_ranked_X.csv')
 
+    '''
     ############################################################## cysteine
     cor = np.full((X.shape[1], 2), np.nan)
     for z in range(X.shape[1]):
@@ -154,10 +195,10 @@ def main():
         return data
     cor = correct_for_mult(cor)
     cor.to_csv(f'{results_dir}/FML_kidney_glucose_M3_ranked_cor_cysteine.csv')
+    '''
 
 
-
-
+    '''
     ############################################################## PCA
     import sklearn
     from sklearn.decomposition import PCA
@@ -173,7 +214,7 @@ def main():
     principal_components = pca.fit_transform(normalized_data.T)
     pd.DataFrame(data=principal_components, index=list(metabolite_map.keys())
                  ).to_csv(f'{results_dir}/metabolites_by_components.csv')
-
+    '''
 
 
 if __name__ == "__main__":
