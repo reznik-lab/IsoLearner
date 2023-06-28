@@ -132,6 +132,32 @@ def FML_regression_model(num_ion_counts, num_isotopolouges, lambda_val):
 
     return model
 
+def heldout_metab_from_rest_model(num_remaining_metabolites, lambda_val):
+    '''
+    An extremely simple NN to predict a heldout metabolites values from the remaining metabolites. Used for a feature analysis.
+    '''
+    
+    model = Sequential([
+        # Input Layer
+        Dense(128, input_dim = num_remaining_metabolites, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+
+        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+        
+        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+        
+        # Removed relu to allow negative 
+        Dense(1, kernel_initializer='he_uniform', kernel_regularizer=l2(lambda_val))
+    ])
+
+    model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate = 3e-05),
+                loss = tf.keras.losses.MeanSquaredError(),
+                metrics=['mse', 'mae'])
+
+    return model
+
 
 def create_large_data(all_data = True, data_path = '/Users/bisramr/MATLAB/Projects/Isoscope_Matlab_V/generated-data', primary_name = 'brain-glucose-KD-M1-isotopolouges.csv'):
     '''
@@ -241,7 +267,7 @@ def create_large_data_ranked(all_data = True, data_path = '/Users/bisramr/MATLAB
 # ============================================== LIST OF FILEPATHS =====================================================================
 def generate_filepath_list(data_path = '/brain-m0-no-log', FML = True, tracer = 'BG'):
     '''
-    Returns relative paths of data files as two lists. 
+    Returns relative paths of data files as two lists. If sample includes both normal and ketogenic replicates, the ND replicates are first, and then KD. 
         - Example Filename: 'B3HB-KD-M1-FML-ioncounts-ranks.csv'
 
     Parameters: 
@@ -1301,7 +1327,7 @@ def cross_validation_testing_kidney(all_valid_metab_names, data_path = '/kidney-
 
 # ======================================================== CROSS TISSUE PREDICTIONS ========================================================
 
-def generate_valid_metabs(morans_path = 'valid-metabs-brain.txt', data_path = '/brain-m0-no-log/Brain-3HB', FML = True, tracer = 'B3HB', num_replicates = 6, morans_cutoff = 0.75):
+def generate_valid_metabs(morans_path = 'valid-metabs-brain.txt', data_path = '/brain-m0-no-log/Brain-3HB', FML = True, tracer = 'B3HB', num_replicates = 6, morans_cutoff = 0.75): 
     '''
     For a given tracer/tissue combination, read in the metabolites and corresponding morans scores of each replicate. Use these to create a list of metabolites 
     that should be kept for model consideration based on the morans cutoff, and identify the isotopologues that need to be removed.
@@ -1458,6 +1484,46 @@ def train_full_tracer(ion_data, iso_data, checkpoints_dir_label = "3HB-cross-tis
     training_features, training_targets = create_full_dataset(ion_data, iso_data, holdout=False)
     history = training(training_features, training_targets, f'{checkpoints_path}/{checkpoints_dir_label}/checkpoint', train = True, TRAIN_ENTIRE_BRAIN = True, EPOCHS = EPOCHS, BATCH_SIZE = 128)   
     return history
+
+
+# ======================================================== FEATURE IMPORTANCE ========================================================
+
+def train_for_feature_importance(tracer = 'B3HB', num_replicates = 6, morans_path = 'valid-metabs-brain.txt', data_path = '/brain-m0-no-log/Brain-3HB', FML = True, morans_cutoff = 0.75):
+    '''
+    This pipeline is designed to be run with The Holdout Randomization Test for Feature Selection in Black Box Models proposed by Tansey et al (2021). 
+    The HRT works with any predictive model and produces a valid p-value for each feature.
+
+    For a given tracer/tissue: 
+        - Load in the data and normalize the features/targets using Moran's I Metric and Consistency
+        - Repeatedly train two separate models holding out 1 metabolite each time:
+            - A model to predict the held out metabolite from all the other metabolites 
+            - A model to predict all of the isotopologues from all metabolites except the hold out metabolite
+
+    Parameters:
+        - tracer (string): prefix for the tracer whose data you want to generate [Glucose: BG, 3-Hydroxybutyrate: B3HB | B15NGln, B15NLeu, B15NNH4Cl]
+            - Precuror 'B' stands for brain data, 'G' for Glucose
+        - num_replicates (int): The number of replicates for this tracer -> how many replicates should match for a metabolite to be kept
+        - morans_path (string): relative path from current directory to text file containing morans information (replicate metabolite names and morans scores) to be read in
+        - data_path (string): relative path from main data directory to the directory containing all of the relevant data files. (Assumes you're already in the primary data directory)
+        - FML (bool): flag indicating whether to use the partial metabolite list (19 metabs) or full metabolite list 
+        - morans_cutoff (float): The moran's I cutoff score for a metabolite to be kept. 
+    '''
+
+    # List of metabolites that should be kept for model consideration based on the morans cutoff, and identify the isotopologues that need to be removed.
+    good_metabs = generate_valid_metabs(morans_path = morans_path, data_path = data_path, FML = FML, tracer = tracer, num_replicates = num_replicates, morans_cutoff = morans_cutoff)
+    # Returns list of cleaned replicate data
+    clean_ion_data, clean_iso_data, new_metabolite_names, new_iso_names, coords_df = preserve_good_metabs(good_metabs, data_path = data_path, FML = FML, tracer = tracer)
+    # Compile individual cleaned replicates into final dataset to use for regression
+    training_features, training_targets = create_full_dataset(clean_ion_data, clean_iso_data, holdout = False)
+
+    # Iterate through all metabolites, remove one at a time and do the following: 
+    for metabolite_number, metabolite in enumerate(list(training_features.columns)):
+        # print(metabolite_number, metabolite)
+        heldout_metab = training_features.loc[:, metabolite]
+        remaining_metabs = training_features.loc[:, training_features.columns != metabolite]
+        print(remaining_metabs.shape)
+
+
 
 
 
