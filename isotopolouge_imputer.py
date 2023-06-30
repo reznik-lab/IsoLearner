@@ -132,33 +132,6 @@ def FML_regression_model(num_ion_counts, num_isotopolouges, lambda_val):
 
     return model
 
-def heldout_metab_from_rest_model(num_remaining_metabolites, lambda_val):
-    '''
-    An extremely simple NN to predict a heldout metabolites values from the remaining metabolites. Used for a feature analysis.
-    '''
-    
-    model = Sequential([
-        # Input Layer
-        Dense(128, input_dim = num_remaining_metabolites, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
-        BatchNormalization(),
-
-        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
-        BatchNormalization(),
-        
-        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
-        BatchNormalization(),
-        
-        # Removed relu to allow negative 
-        Dense(1, kernel_initializer='he_uniform', kernel_regularizer=l2(lambda_val))
-    ])
-
-    model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate = 3e-05),
-                loss = tf.keras.losses.MeanSquaredError(),
-                metrics=['mse', 'mae'])
-
-    return model
-
-
 def create_large_data(all_data = True, data_path = '/Users/bisramr/MATLAB/Projects/Isoscope_Matlab_V/generated-data', primary_name = 'brain-glucose-KD-M1-isotopolouges.csv'):
     '''
     Creates feature and target dataframes consisting of different samples concatenated to each other. Assumes there are 6 total - 3 KD and 3 ND. 
@@ -555,7 +528,7 @@ def preprocess_data(ion_counts, isotopolouges, testing_split = True):
     y = isotopolouges.to_numpy()
     # print(x.shape, y.shape)
     num_ion_counts = x.shape[1]
-    num_isotopolouges = y.shape[1]
+    num_isotopolouges = y.shape[1] if len(y.shape) != 1 else 1
 
     if testing_split:
         x_train, x_temp, y_train, y_temp = train_test_split(x, y, test_size=0.3)
@@ -1486,12 +1459,14 @@ def train_full_tracer(ion_data, iso_data, checkpoints_dir_label = "3HB-cross-tis
     return history
 
 
-# ======================================================== FEATURE IMPORTANCE ========================================================
+# ======================================================== FEATURE IMPORTANCE for BLACK BOX MODEL ========================================================
 
 def train_for_feature_importance(tracer = 'B3HB', num_replicates = 6, morans_path = 'valid-metabs-brain.txt', data_path = '/brain-m0-no-log/Brain-3HB', FML = True, morans_cutoff = 0.75):
     '''
     This pipeline is designed to be run with The Holdout Randomization Test for Feature Selection in Black Box Models proposed by Tansey et al (2021). 
-    The HRT works with any predictive model and produces a valid p-value for each feature.
+    The HRT works with any predictive model, and uses data splitting to produce a valid p-value for each feature. The researchers compared the HRT to
+    another approach and found that the HRT had better performance in terms of power and controlling the error rate. They applied the HRT to two real-life 
+    examples and showed how it outperformed heuristic methods in selecting important features for predictive models.
 
     For a given tracer/tissue: 
         - Load in the data and normalize the features/targets using Moran's I Metric and Consistency
@@ -1518,13 +1493,58 @@ def train_for_feature_importance(tracer = 'B3HB', num_replicates = 6, morans_pat
 
     # Iterate through all metabolites, remove one at a time and do the following: 
     for metabolite_number, metabolite in enumerate(list(training_features.columns)):
-        # print(metabolite_number, metabolite)
+        print(metabolite_number, metabolite)
+        # Predict the heldout metabolite from all of the other metabolites
         heldout_metab = training_features.loc[:, metabolite]
         remaining_metabs = training_features.loc[:, training_features.columns != metabolite]
-        print(remaining_metabs.shape)
+        holdout_MSE = predict_heldout_metab(remaining_metabs, heldout_metab)
+
+        # Predict the isotopologues from all metabolites minus the holdout
+        num_ion_counts, num_isotopolouges, x_train, y_train, x_val, y_val = preprocess_data(remaining_metabs, training_targets, testing_split = False)
+        model = FML_regression_model(num_ion_counts, num_isotopolouges, 0.01)
+        history = model.fit(x_train, y_train, batch_size = BATCH_SIZE, verbose=1, validation_data = (x_val, y_val), epochs=EPOCHS, callbacks=[model_checkpoint_callback])
 
 
+    return training_features, training_targets
 
+def NN_model_heldout_metab_from_remaining(num_remaining_metabolites, lambda_val):
+    '''
+    An extremely simple NN to predict a heldout metabolites values from the remaining metabolites. Used for a feature analysis.
+    '''
+    model = Sequential([
+        # Input Layer
+        Dense(128, input_dim = num_remaining_metabolites, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+
+        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+        
+        Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+        BatchNormalization(),
+        
+        # Removed relu to allow negative 
+        Dense(1, kernel_initializer='he_uniform', kernel_regularizer=l2(lambda_val))
+    ])
+
+    model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate = 3e-05),
+                loss = tf.keras.losses.MeanSquaredError(),
+                metrics=['mse', 'mae'])
+
+    return model
+
+def predict_heldout_metab(feature_data, target_data, EPOCHS = 30, BATCH_SIZE = 256):
+    num_ion_counts, num_isotopolouges, x_train, y_train, x_val, y_val = preprocess_data(feature_data, target_data, testing_split = False)
+
+    # define model
+    model = NN_model_heldout_metab_from_remaining(num_ion_counts, 0.01)
+
+    # fit model
+    history = model.fit(x_train, y_train, batch_size = BATCH_SIZE, verbose = 2, validation_data = (x_val, y_val), epochs=EPOCHS)
+    
+    prediction = model.predict(x_val)
+    MSE = np.square(np.subtract(y_val,prediction)).mean()
+
+    return MSE
 
 
 def main():
