@@ -1552,56 +1552,7 @@ def main():
     isotopolouges = pd.read_csv(path) 
     isotopolouges = isotopolouges.drop(labels = ['x', 'y', 'Unnamed: 0'], axis = 1)
     print(isotopolouges)
-    isotopolouge_names = list(isotopolouges.columns)
-
-    ion_counts = pd.read_csv('/Users/bisramr/MATLAB/Projects/Isoscope_Matlab_V/generated-data/brain-glucose-KD-M1-ioncounts.csv')
-    ion_counts = ion_counts.drop(labels = ['x', 'y', 'Unnamed: 0'], axis = 1)
-    print(ion_counts)
-    metabolite_names = list(ion_counts.columns)
-
-    x = ion_counts.to_numpy()
-    y = isotopolouges.to_numpy()
-    print(x.shape, y.shape)
-
-    x_train, x_temp, y_train, y_temp = train_test_split(x, y, test_size=0.3)
-    x_val, x_test, y_val, y_test = train_test_split(x_temp, y_temp, test_size=0.5)
-    num_ion_counts = x.shape[1]
-    num_isotopolouges = y.shape[1]
-    print(num_ion_counts, num_isotopolouges)
-    print(x_train, y_train)
-
-
-    # define model
-    model = multiple_regression(num_ion_counts, num_isotopolouges, 0.01)
-
-    # Checkpoints
-    # https://keras.io/api/callbacks/model_checkpoint/
-    checkpoint_filepath = './tmp/checkpoint'
-    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_filepath,
-        verbose = 1,
-        save_weights_only=True,
-        monitor='loss',
-        mode='max',
-        save_best_only=False,
-        save_freq= int(217 * 10))
-
-    # fit model
-    # history = model.fit(x_train, y_train, batch_size = 64, verbose=1, validation_data = (x_val, y_val), epochs=100, callbacks=[model_checkpoint_callback])
-
-
-    model.load_weights(checkpoint_filepath)
-    # evaluate model on test set
-    mae = model.evaluate(x_test, y_test, verbose=1)
-
-    prediction = model.predict(x_test)
-    #plt.scatter(y_test, prediction)
-    # plt.savefig(f'/Users/bisramr/MATLAB/Projects/Isoscope_Matlab_V/generated-data/brain-glucose-KD-M1-predicting.png')
-    #plt.show()
-
-    print(y_test.shape, prediction.shape)
-
-    plot_individual_isotopolouges(y_test, prediction, isotopolouge_names)
+   
 
 
 if __name__ == "__main__":
@@ -1610,60 +1561,6 @@ if __name__ == "__main__":
     print(tf.__version__)
     train = False
     model = multiple_regression_model(5, 5, 4)
-
-    if False:
-        # Single brain, unranked - trained on KD M1. Withold some of the brain as test set.
-        brain_K1_ions = get_data(file_name="testing-all-ion.csv")
-        brain_K1_isotopolouges = get_data(file_name="testing-all-isotopolouges.csv")
-        # training(brain_K1_ions, brain_K1_isotopolouges, './saved-weights/unnormalized/KD-M1-unranked/checkpoint', train = True, TRAIN_ENTIRE_BRAIN = True)
-        test_whole_brain(brain_K1_ions, brain_K1_isotopolouges, './saved-weights/unnormalized/KD-M1-unranked/checkpoint')
-
-    if False:
-        # Single brain, unranked - trained on KD M1. Withold some of the brain as test set.
-        brain_K1_ions = get_data(file_name="brain-glucose-KD-M1-ioncounts.csv")
-        brain_K1_isotopolouges = get_data(file_name="brain-glucose-KD-M1-isotopolouges.csv")
-        training(brain_K1_ions, brain_K1_isotopolouges, './saved-weights/KD-M1-unranked-dropout/checkpoint', train = train, TRAIN_ENTIRE_BRAIN = False)
-        test_whole_brain(brain_K1_ions, brain_K1_isotopolouges, './saved-weights/KD-M1-unranked-dropout/checkpoint')
-
-    if False:
-        # Test KD-M1 on entire KD-M2 and entire KD-M1
-        brain_K2_ions = get_data(file_name="brain-glucose-KD-M2-ioncounts.csv")
-        brain_K2_isotopolouges = get_data(file_name="brain-glucose-KD-M2-isotopolouges.csv")
-        test_whole_brain(brain_K2_ions, brain_K2_isotopolouges, './saved-weights/KD-M1-unranked-dropout/checkpoint')
-
-    if False: 
-        ions, isotopolouges, feat, targets = create_large_data(all_data = False)    
-        print(ions, isotopolouges)
-        training(ions, isotopolouges, './saved-weights/unranked-train5-test1/checkpoint', train = True)
-
-    if False:
-        # Test first 5 brains on entire ND-M3
-        brain_N3_ions = get_data(file_name="brain-glucose-ND-M3-ioncounts.csv")
-        brain_N3_isotopolouges = get_data(file_name="brain-glucose-ND-M3-isotopolouges.csv")
-        test_whole_brain(brain_N3_ions, brain_N3_isotopolouges, './saved-weights/unranked-train5-test1/checkpoint')
-
-    # Ranked 
-    if False:
-        # Single brain, unranked - trained on KD M1. Withold some of the brain as test set.
-        brain_K1_ranked_ions = get_data(file_name="brain-glucose-KD-M1-ioncounts-ranks.csv")
-        brain_K1_ranked_isotopolouges = get_data(file_name="brain-glucose-KD-M1-isotopolouges-ranks.csv")
-        brain_K1_ranked_ions = brain_K1_ranked_ions * 100
-        brain_K1_ranked_isotopolouges = brain_K1_ranked_isotopolouges * 100
-        print(brain_K1_ranked_isotopolouges)
-        training(brain_K1_ranked_ions, brain_K1_ranked_isotopolouges, './saved-weights/KD-M1-ranked-dropout-scaled/checkpoint', train = train, TRAIN_ENTIRE_BRAIN = False)
-        test_whole_brain(brain_K1_ranked_ions, brain_K1_ranked_isotopolouges, './saved-weights/KD-M1-ranked-dropout-scaled/checkpoint')
-
-    if False:
-        # Single brain, unranked - trained on KD M1. Withold some of the brain as test set.
-        brain_K2_ranked_ions = get_data(file_name="brain-glucose-KD-M2-ioncounts-ranks.csv")
-        brain_K2_ranked_isotopolouges = get_data(file_name="brain-glucose-KD-M2-isotopolouges-ranks.csv")
-        training(brain_K2_ranked_ions, brain_K2_ranked_isotopolouges, './saved-weights/KD-M2-ranked-dropout/checkpoint', train = False, TRAIN_ENTIRE_BRAIN = False)
-        test_whole_brain(brain_K2_ranked_ions, brain_K2_ranked_isotopolouges, './saved-weights/KD-M2-ranked-dropout/checkpoint')
-
-    if False: 
-        ions, isotopolouges, feat, targets = create_large_data_ranked(all_data = False)    
-        print(ions, isotopolouges)
-        training(ions, isotopolouges, './saved-weights/ranked-train5-test1/checkpoint', train = True)
 
     if False:
         # Single brain, unranked - trained on KD M1. Withold some of the brain as test set.
