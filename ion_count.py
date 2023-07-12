@@ -20,10 +20,6 @@ import csv
 import warnings
 import random
 from statsmodels.stats.multitest import multipletests
-#import cmdstanpy
-#from cmdstanpy import CmdStanModel, set_cmdstan_path
-
-#set_cmdstan_path('/rtsess01/juno/home/xiea1/miniconda3/envs/cmdstanpy/bin/cmdstan')
 
 def load_data(raw_data_path, start_index, iso_index, drop_first = False):
     '''
