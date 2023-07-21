@@ -1,5 +1,5 @@
 import numpy as np
-from skimage.io import imread
+#from skimage.io import imread
 from libpysal.weights import lat2W
 import pandas as pd
 from esda.moran import Moran
@@ -146,15 +146,15 @@ if __name__ == "__main__":
     txt_file: the path to the txt file that will contain the isotopolouge indices for valid and invalid isolouges as separate lists
     paths: list containing the filepaths for your data
     '''
-    tracer_dir1 = 'Brain-3HB'
-    tracer1 = 'B3HB'
+    tracer_dir1 = 'Brain-Glucose'
+    tracer1 = 'BG'
 
     tracer_dir2 = 'Brain-15NLeu'
     tracer2 = 'B15NLeu'
 
     tracer = '3HB'
 
-    txt_file = './valid-metabs-brain.txt'
+    txt_file = './valid-metabs-brain-glucose.txt'
     path1 = f'brain-m0-no-log/{tracer_dir1}/{tracer1}-KD-M1'
     path2 = f'brain-m0-no-log/{tracer_dir1}/{tracer1}-KD-M2'
     path3 = f'brain-m0-no-log/{tracer_dir1}/{tracer1}-KD-M3'
