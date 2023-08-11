@@ -1,0 +1,17 @@
+generated-data/
+model-configs-round-1/
+model-configs-round-2/
+removed configs/
+round-2-models/
+__pycache__/
+all-models/
+df_sorted.csv
+GridSearch Results.xlsx
+results-end.csv
+results-final.csv
+results-middle1.csv
+results-middle2.csv
+results-OG.csv
+results-round-2.csv
+.DS_STORE/
+.DS_Store
