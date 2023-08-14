@@ -7,6 +7,8 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers.legacy import Adam, SGD, RMSprop
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator, RegressorMixin
+from keras.models import load_model
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from IPython.display import display
@@ -15,6 +17,7 @@ from scipy import stats
 from visualization import *
 from collections import Counter
 from statsmodels.stats.multitest import multipletests
+import copy
 
 from sklearn.metrics import mean_squared_error # for calculating the cost function
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -60,9 +63,8 @@ class IsoLearner:
         # Returns list of cleaned replicate data
         print("Cleaning data ", end = "")
         self.clean_ion_data, self.clean_iso_data, self.new_metabolite_names, self.new_iso_names, self.coords_df = self.preserve_good_metabs()
-
+        self.all_models = []
         
-
     # ============================================== LIST OF FILEPATHS =====================================================================
     def generate_filepath_list(self):
         '''
@@ -588,4 +590,350 @@ class IsoLearner:
     # <==================================================== TRAINING ===================================================================>
     # ===================================================================================================================================
 
-# ======================================================== ISOLEARNER ========================================================
+    # ===================================================================================================================================
+    # <==================================================== EVALUATION ===================================================================>
+    def predict(self, feature_data, target_data, checkpoint_path = './saved-weights/KD-M1-unranked-dropout/checkpoint'):
+        '''
+        Predicts the isotopolouge breakdowns of a given list of metabolite, using the weights of the saved path. 
+
+        Returns: 
+            - prediction_df: a dataframe in which the columns are individual isotopolouges and the rows are observations
+        '''
+        isotopolouge_names = list(target_data.columns)
+        num_ion_counts = feature_data.shape[1]
+        num_isotopolouges = target_data.shape[1]
+
+        features = feature_data.to_numpy()
+        # targets = target_data.to_numpy()
+
+        # define model
+        model = self.FML_regression_model(num_ion_counts, num_isotopolouges, 0.01)
+
+        # Checkpoints
+        # https://keras.io/api/callbacks/model_checkpoint/
+        checkpoint_filepath = checkpoint_path # './saved-weights/KD-M1-unranked-dropout/checkpoint'
+        model.load_weights(checkpoint_filepath).expect_partial()
+    
+        prediction = model.predict(features)
+        prediction_df = pd.DataFrame(prediction, columns = isotopolouge_names)
+
+        return prediction_df
+    
+    def spearman_rankings(self, actual, predicted, plot = True):
+        '''
+        For each pair of actual/predicted isotopolouges, calculates the Spearman's rank correlation coefficient. Allows us to know which isotopolouges are best predicted by this model.
+
+        Paramters: 
+            - actual (df): the ground truth dataframe for the regression model's predictions to be compared too. 
+        '''
+        spearmans = []
+        p_values = []
+
+        actual = actual.drop(labels = ['x', 'y'], axis = 1, errors = 'ignore')
+        predicted = predicted.drop(labels = ['x', 'y'], axis = 1, errors = 'ignore')
+
+        # Save the p values and then regulate them with this:
+        # https://www.statsmodels.org/dev/generated/statsmodels.stats.multitest.multipletests.html 
+        for i in range(len(list(actual.columns))):
+            spearman_coeff = stats.spearmanr(actual.iloc[:, i], predicted.iloc[:, i])
+            spearmans.append(spearman_coeff.correlation)
+            p_values.append(spearman_coeff.pvalue)
+
+        # print(spearmans)        
+        df_spearman = pd.DataFrame()
+        df_spearman["median_rho"] = spearmans
+        df_spearman["isotopologue"] = list(actual.columns)
+        # Calculate q values and plot as color
+        corrected_pvals = multipletests(p_values, method="fdr_bh", alpha = 0.1)
+        df_spearman['pvals'] = corrected_pvals[1]
+        color = ["purple" if pval <= 0.1 else "red" for pval in corrected_pvals[1]]
+        df_spearman["color"] = color
+
+        # Pull p-value 
+        if plot:
+            median_rho_feature_plot(df_spearman)
+
+        sorted = df_spearman.sort_values(by=["median_rho"], ascending=False)
+
+        return sorted
+    
+    def print_evaluation_metrics(self, ground_truth_df, predicted_df, num_rows = 200, create_df = False, print_python_table = False, latex_table = False):
+        '''
+        Function to report regressional evaluation metrics for deep learning model. 
+        '''   
+        spearman_sorted = self.spearman_rankings(ground_truth_df, predicted_df, plot = False)
+        top_predicted_metab_names = list(spearman_sorted['isotopologue'])
+        median_rhos = list(spearman_sorted['median_rho'])
+        pvals = list(spearman_sorted['pvals'])
+
+        metric_names = ['isotopologue', 'Median Rho', 'p-value', 'MSE', 'MAE', 'R2']
+        evaluation_metrics = []
+        metabolites_used = set()
+        mse_list = []
+        mae_list = []
+        r2_list = []
+
+        for i, isotopologue_name in enumerate(top_predicted_metab_names): #[0:num_rows]):
+            metabolite_name = isotopologue_name[0:-5] if not create_df else isotopologue_name
+            if metabolite_name not in metabolites_used:
+                ground_truth = ground_truth_df.loc[:, [isotopologue_name]]
+                predicted = predicted_df.loc[:, [isotopologue_name]]
+
+                mse = round(mean_squared_error(ground_truth, predicted), 4)
+                mse_list.append(mse)
+
+                mae = round(mean_absolute_error(ground_truth, predicted), 4)
+                mae_list.append(mae)
+
+                r_2 = round(r2_score(ground_truth, predicted), 4)
+                r2_list.append(r_2)
+
+                evaluation_metrics.append([isotopologue_name, round(median_rhos[i], 4), round(pvals[i], 4), mse, mae, r_2])
+
+                if latex_table:
+                    print(f'{isotopologue_name} & {round(median_rhos[i], 4)} & {round(pvals[i], 4)} & {mse} & {mae} & {r_2} \\\\')
+            
+                metabolites_used.add(metabolite_name)
+
+        if print_python_table:
+            myTable = PrettyTable(metric_names)
+            for i in range(len(evaluation_metrics)):
+                myTable.add_row(evaluation_metrics[i])
+
+            print(myTable)
+
+        #spearman_sorted['MSE'] = mse_list
+        #spearman_sorted['MAE'] = mae_list
+        #spearman_sorted['R2'] = r2_list 
+
+        return pd.DataFrame(evaluation_metrics, columns = metric_names)
+
+    def relative_metabolite_success(self, TIC_metabolite_names = 0, morans_invalid_isos = 0, isotopologue_metrics= 0, all_isotopologues = 0, num_bars = 51):
+        '''
+        parameters:
+            - TIC_metabolite_names: a list of the metabolite names in the total ion counts matrix. The full metabolite list has 353. 
+            - morans_invalid_isos: list of names of isotopologues that were identified by moran's i to be removed. 
+            - isotopologue_metrics: df containing the name of each isotopologue and its regression evaluation metrics
+        '''
+        metabs_success_count = dict()
+        metabs_set = set()
+        isotopologue_metrics.sort_values(by=["isotopologue"], ascending=False, inplace = True)
+        successful_metabs = []
+
+        for index, row in isotopologue_metrics.iterrows():
+            metab_name = row['isotopologue'][0:-5]
+        
+            if metab_name not in metabs_set:
+                metabs_set.add(metab_name)
+                metabs_success_count[metab_name] = [0,0,0]
+
+            if row['R2'] >= 0.3:
+                metabs_success_count[metab_name][0] += 1
+            else:
+                metabs_success_count[metab_name][1] += 1
+
+        for isotopologue in all_isotopologues:
+            metab_name = isotopologue[0:-5]
+            if metab_name not in metabs_set:
+                metabs_set.add(metab_name)
+                metabs_success_count[metab_name] = [0,0,0]
+            else:
+                metabs_success_count[metab_name][2] += 1
+
+        # print(metabs_success_count)
+        stacked_bar_plot(metabs_success_count, num_bars=num_bars)#len(metabs_set))
+
+        return isotopologue_metrics
+    
+    def cross_validation_testing(self, checkpoints_dir_label = '3HB', checkpoints_path = "./saved-weights"):
+        checkpoints_dir = f'{checkpoints_path}/cross-validation-{checkpoints_dir_label}'
+        # List of isotopologue names that should be removed from the dataset based on Moran's I score being low across majority of replicates
+        #invalid_morans = indices_to_metab_names(all_invalid_isos, cutoff = cutoff)
+        # Lists of feature dataframes and target dataframes respectively, where each element is a different replicate
+        #ion_data, iso_data = remove_data_inconsistencies(additional_metabs_to_remove = invalid_morans, data_path = data_path, FML = FML, tracer = tracer)
+    
+        ground_truth = []
+        predictions = []
+        sorted_iso_names = []
+    
+        for i in range(len(self.clean_ion_data)):
+            # Create training and testing sets - pull one replicate out of the set 
+            _, _, testing_features, testing_targets = self.create_full_dataset(self.clean_ion_data, self.clean_iso_data, holdout_index = i)
+            print(f"Testing with replicate {i} heldout. # samples = {testing_features.shape[0]}")
+            checkpoint_path = checkpoints_dir + f'/holdout-{i}/checkpoint'
+            predicted = self.predict(testing_features, testing_targets, checkpoint_path = checkpoint_path)
+            ground_truth.append(testing_targets)
+            predictions.append(predicted)
+
+            self.clean_ion_data.insert(i, testing_features)
+            self.clean_iso_data.insert(i, testing_targets)
+
+            # sorted_iso_names.append(list(spearman_rankings(testing_targets, predicted, plot = False)['isotopologue']))
+            # plot_individual_isotopolouges_2(testing_targets, predicted, list(testing_targets.columns), specific_to_plot = sorted_iso_names[i][0:25], grid_size = 5, ranked = True)
+   
+        return ground_truth, predictions
+   
+    def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 65):
+        '''
+        Takes the ground truth and predicted values of a series of replicates, concatenate them all and calculate the evaluation metrics as a form of cross validation. 
+
+        parameters:
+            - ground_replicates (list): list of ground truth isotopologue values (df of size # pixels x # isotopologues) where each element is a different replicate.
+            - predicted_replicates (list): list of predicted isotopologue values (df of size # pixels x # isotopologues) where each element is a different replicate corresponding to the respective element in ground_replicates.
+            - sorting_metric (string, default = "isotopologue"): name of the column that contains the isotopologue names.
+            - eval_metric (string, default = "Median Rho"): name of the column with the sorting metric that the returned dataframe should be sorted by. 
+
+        returns:
+            - new_df (dataframe): df with columns [isotopologue, eval_metrics...] that contains the evaluation metrics taken for all replicates results concatenated together.
+        '''
+
+        num_replicates = len(ground_replicates)
+
+        grounds = ground_replicates[0]
+        for i, data in enumerate(ground_replicates[1:num_replicates]):
+            grounds = pd.concat([grounds, data], ignore_index=True, axis = 0)
+
+        predicts = predicted_replicates[0]
+        for i, data in enumerate(predicted_replicates[1:num_replicates]):
+            predicts = pd.concat([predicts, data], ignore_index=True, axis = 0)
+
+        print(grounds.shape, predicts.shape)
+        val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
+
+        df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
+        temp = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars)
+
+        return val_sorted_dataframe
+
+    # <==================================================== EVALUATION ===================================================================>
+    # ===================================================================================================================================
+
+    # =================================================================================================================================================
+    # <==================================================== BLACK BOX FEATURE EVAL ===================================================================>
+    def black_box_feature_evaluation(self, metabolites = []):
+        '''
+        This function will use a set amount of metabolites and their corresponding isotopologues to test the black box feature evaluation model
+        '''
+        full_metabolites, full_isotopologues = self.create_full_dataset(self.clean_ion_data, self.clean_iso_data, holdout=False)
+        shortened_metabolites = full_metabolites[metabolites]
+
+        full_isotopologues_names = full_isotopologues.columns.to_list()
+        print(metabolites)
+        print(full_isotopologues_names[0])
+
+        print([iso for iso in full_isotopologues_names if any(metabolite in iso for metabolite in metabolites)])
+        shortened_isotopologues = full_isotopologues[[iso for iso in full_isotopologues_names if any(metabolite in iso for metabolite in metabolites)]]
+        
+        return shortened_metabolites, shortened_isotopologues
+
+    # <==================================================== BLACK BOX FEATURE EVAL ===================================================================>
+    # =================================================================================================================================================
+
+# ================================================================= ISOLEARNER =================================================================
+
+
+# ================================================================= BLACK BOX MODEL =================================================================
+class NeuralNetRegressorX(BaseEstimator, RegressorMixin):
+    '''
+    Params for black box model feature: 
+        - X: First Variable that will be conditioned on Z. | Shape (N, dim_X) | the heldout metabolite that we are checking the importance of
+        - Y: Second Variable that is conditioned on Z. | Shape (N, dim_Y) | all of the targets (isotopolgoues)
+        - Z: Conditioned on Variable from X and Y. | Shape (N, dim_Z) | the remaining metabolites (minus the heldout one)
+            -> Note that Z can be compressed via processes like PCA to improve runtime speed. 
+
+    - class_reg_on_X: 
+    [Class] -> This class should generate objects (functions) have two methods: 
+        - class_reg_on_X().fit(Z, X): .fit() should take in two parameters and train a model that will output an expectation of X given a new sample from Z: 
+            Z: Domain data (all of the other metabolites)
+            X: Conditional Expectation Outcomes (the held out metabolite)
+
+        - class_reg_on_X().predict(Z): .predict() should return all the conditional expectations off of Z based on the model trained with .fit().
+            Z: "Testing" Domain Data
+
+    '''
+    def __init__(self):
+        print("Initiating reg on X")
+
+    def build_model(self):
+        model = tf.keras.Sequential([
+            tf.keras.layers.Input(shape=(self.input_dim,)),
+            tf.keras.layers.Dense(64, activation='relu'),
+            BatchNormalization(),
+            tf.keras.layers.Dense(64, activation='relu'),
+            BatchNormalization(),
+            tf.keras.layers.Dense(64, activation='relu'),
+            BatchNormalization(),
+
+            tf.keras.layers.Dense(1)  # Output layer
+        ])
+        model.compile(optimizer='adam', loss='mean_squared_error')
+        return model
+
+    def fit(self, Z, X):
+        self.input_dim = Z.shape[1]
+        self.model = self.build_model()
+        self.model.fit(Z, X, epochs=10, verbose=0)
+
+    def predict(self, Z):
+        return self.model.predict(Z)
+
+class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
+    '''
+    - class_reg_on_Y: 
+    [Class] -> This class should generate objects (functions) have two methods: 
+        - class_reg_on_Y().fit(Z, Y): .fit() should take in two parameters and train a model that will output an expectation of Y given a new sample from Z: 
+            Z: Domain data 
+            Y: Conditional Expectation Outcomes
+        - class_reg_on_Y().predict(Z): .predict() should return all the conditional expectations off of Z based on the model trained with .fit().
+            Z: "Testing" Domain Data
+    '''
+
+    def __init__(self, lambda_val = 0.001):
+        self.lambda_val = lambda_val
+
+    def build_model(self):
+        model = tf.keras.Sequential([
+            # Input Layer
+            Dense(128, input_dim = self.input_dim, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+
+            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            Dropout(0.25),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            Dropout(0.25),      
+            
+            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            # Removed relu to allow negative 
+            Dense(self.output_dim, kernel_initializer='he_uniform', kernel_regularizer=l2(self.lambda_val))
+        ])
+
+        model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate = 3e-05),
+                    #loss=tf.keras.losses.MeanSquaredError(),
+                    loss = tf.keras.losses.MeanSquaredError(),
+                    metrics=['mse', 'mae'])        
+                    
+        return model
+
+    def fit(self, Z, Y):
+        self.input_dim = Z.shape[1]
+        self.output_dim = Y.shape[1]
+        self.model = self.build_model()
+        self.model.fit(Z, Y, epochs=10, verbose=0)
+
+    def predict(self, Z):
+        return self.model.predict(Z)
+
