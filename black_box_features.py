@@ -73,8 +73,13 @@ def univariate_covariance_metric(X, Y, Z, reg_on_X, reg_on_Y):
     return np.abs(numerator/denomenator), R_i
 
 def multivariate_covariance_metric(X, Y, Z, reg_func_X, reg_func_Y):
-    dim_x = X.shape[1] 
-    dim_y = Y.shape[1]
+    '''
+    X - 100K x 1
+    Y - 100K x 100
+    Z - 100K x 2
+    '''
+    dim_x = X.shape[1] # 1
+    dim_y = Y.shape[1] # 100 (for now)
 
     residual_array = np.empty((dim_x, dim_y), dtype=object) # X by Y array of residual arrays (This is ~ (X, Y, N) array)
     gcm_array = np.empty((dim_x, dim_y), dtype=float) # X by Y array of GCM values with each pairwise dimension univariate GCM.
@@ -119,9 +124,10 @@ Params:
             Y: Conditional Expectation Outcomes
         - class_reg_on_Y().predict(Z): .predict() should return all the conditional expectations off of Z based on the model trained with .fit().
             Z: "Testing" Domain Data
-                
+
 - stat_aggregation_func: This is a method that takes reduces a series of numbers to a single value based on some statistic per experiment. 
     Default: np.max() which will take the max per series of numbers
+    # Note - talk to Wes about using a diff function 
 
 - N: Number of samples to use to determine whether the null hypothesis can be rejected based on what the GCM is. 
 
@@ -145,11 +151,11 @@ def multi_gcm_test(X, Y, Z, class_reg_on_X, class_reg_on_Y, stat_aggregation_fun
     if num_experiments != Z.shape[0]:
         raise Exception("X and Z first dimensions are not the same")
     
-    #Generalized Covariance Metric
+    # Generalized Covariance Metric
     gcm_values, residual_array = multivariate_covariance_metric(X, Y, Z, class_reg_on_X, class_reg_on_Y)
     S_n = stat_aggregation_func(gcm_values)
     
-    # Get Covariance Matrix
+    # Get Covariance Matrix - figuring out, how the samples pulled from multivariate matrix look compared to univariate
     dim_x = residual_array.shape[0]
     dim_y = residual_array.shape[1]
     cov = covariance_matrix(residual_array)
@@ -160,6 +166,7 @@ def multi_gcm_test(X, Y, Z, class_reg_on_X, class_reg_on_Y, stat_aggregation_fun
     
     p_value = get_p_value(G, S_n)
     
+    # Cannot compared the unscaled S_n values, 
     return S_n, p_value
     
 

@@ -872,7 +872,7 @@ class NeuralNetRegressorX(BaseEstimator, RegressorMixin):
     def fit(self, Z, X):
         self.input_dim = Z.shape[1]
         self.model = self.build_model()
-        self.model.fit(Z, X, epochs=10, verbose=0)
+        self.model.fit(Z, X, epochs=10, verbose=1)
 
     def predict(self, Z):
         return self.model.predict(Z)
@@ -896,23 +896,6 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
             # Input Layer
             Dense(128, input_dim = self.input_dim, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
-
-            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            Dropout(0.25),
-            
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            Dropout(0.25),      
             
             Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
@@ -930,9 +913,9 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
 
     def fit(self, Z, Y):
         self.input_dim = Z.shape[1]
-        self.output_dim = Y.shape[1]
+        self.output_dim = 1
         self.model = self.build_model()
-        self.model.fit(Z, Y, epochs=10, verbose=0)
+        self.model.fit(Z, Y, epochs=10, verbose=1)
 
     def predict(self, Z):
         return self.model.predict(Z)
