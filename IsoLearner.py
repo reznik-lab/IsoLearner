@@ -872,7 +872,7 @@ class NeuralNetRegressorX(BaseEstimator, RegressorMixin):
     def fit(self, Z, X):
         self.input_dim = Z.shape[1]
         self.model = self.build_model()
-        self.model.fit(Z, X, epochs=10, verbose=1)
+        self.model.fit(Z, X, epochs=10, verbose=0)
 
     def predict(self, Z):
         return self.model.predict(Z)
@@ -915,7 +915,7 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
         self.input_dim = Z.shape[1]
         self.output_dim = 1
         self.model = self.build_model()
-        self.model.fit(Z, Y, epochs=10, verbose=1)
+        self.model.fit(Z, Y, epochs=10, verbose=0)
 
     def predict(self, Z):
         return self.model.predict(Z)

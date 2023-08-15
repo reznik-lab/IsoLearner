@@ -87,7 +87,8 @@ def multivariate_covariance_metric(X, Y, Z, reg_func_X, reg_func_Y):
     for i in range(dim_x):
         uni_gcm_X = X[:,i].reshape(-1,) 
         uni_gcm_reg_X = reg_func_X().fit(Z, uni_gcm_X)
-        for j in range(dim_y): 
+        for j in range(dim_y):
+            print(f"Y is currently {j}") 
             uni_gcm_Y = Y[:, j].reshape(-1,) 
             uni_gcm_reg_Y = reg_func_Y().fit(Z, uni_gcm_Y)
             gcm_array[i,j], residual_array[i,j] = univariate_covariance_metric(uni_gcm_X, uni_gcm_Y, Z, uni_gcm_reg_X, uni_gcm_reg_Y)
