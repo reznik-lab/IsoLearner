@@ -168,7 +168,7 @@ def multi_gcm_test(X, Y, Z, class_reg_on_X, class_reg_on_Y, stat_aggregation_fun
     p_value = get_p_value(G, S_n)
     
     # Cannot compared the unscaled S_n values, 
-    return S_n, p_value
+    return gcm_values, S_hat_samples, G, S_n, p_value
     
 
 """
