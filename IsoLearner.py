@@ -29,9 +29,16 @@ import re
 # ======================================================== ISOLEARNER ========================================================
 
 class IsoLearner:
-    def __init__(self, absolute_data_path, relative_data_path, morans_path = 'valid-metabs-brain.txt', tracer = 'B3HB', FML = True, num_replicates = 6, morans_cutoff = 0.75):
+    def __init__(self, 
+                absolute_data_path, 
+                relative_data_path, 
+                morans_path = 'valid-metabs-brain.txt', 
+                tracer = 'B3HB', 
+                FML = True, 
+                num_replicates = 6, 
+                morans_cutoff = 0.75):
+        
         '''
-
         Parameters:
         - absolute_data_path (str): Absolute path to the directory containing the file (exclude trailing forward slash)
         - relative_data_path (str): relative path from absolute data directory to the directory containing all of the relevant data files. (Assumes you're already in the primary data directory)
@@ -872,11 +879,11 @@ class NeuralNetRegressorX(BaseEstimator, RegressorMixin):
     def fit(self, Z, X):
         self.input_dim = Z.shape[1]
         self.model = self.build_model()
-        self.model.fit(Z, X, epochs=10, verbose=0)
+        self.model.fit(Z, X, epochs=10, verbose=2)
         return self.model
 
     def predict(self, Z):
-        return self.model.predict(Z)
+        return self.model.predict(Z, verbose = 0)
 
 class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
     '''
@@ -912,13 +919,52 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
                     
         return model
 
+    def build_IsoLearner(self):
+        model = tf.keras.Sequential([
+            # Input Layer
+            Dense(128, input_dim = self.input_dim, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+
+            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            Dropout(0.25),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            Dropout(0.25),      
+            
+            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
+            BatchNormalization(),
+            
+            # Removed relu to allow negative 
+            Dense(self.output_dim, kernel_initializer='he_uniform', kernel_regularizer=l2(self.lambda_val))
+        ])
+
+        model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate = 3e-05),
+                    #loss=tf.keras.losses.MeanSquaredError(),
+                    loss = tf.keras.losses.MeanSquaredError(),
+                    metrics=['mse', 'mae'])
+
+        return model
+        
+
     def fit(self, Z, Y):
         self.input_dim = Z.shape[1]
-        self.output_dim = 1
-        self.model = self.build_model()
-        self.model.fit(Z, Y, epochs=10, verbose=0)
+        self.output_dim = Y.shape[1]
+        # self.model = self.build_model()
+        self.model = self.build_IsoLearner()
+        self.model.fit(Z, Y, epochs=50, verbose=2)
         return self.model
 
     def predict(self, Z):
-        return self.model.predict(Z)
+        return self.model.predict(Z, verbose = 0)
 

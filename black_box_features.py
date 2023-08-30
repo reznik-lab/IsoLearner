@@ -59,11 +59,12 @@ def covariance_matrix(residual_array):
                     
     return sigma_matrix
 
-def univariate_covariance_metric(X, Y, Z, reg_on_X, reg_on_Y):
+def univariate_covariance_metric(X, Y, Z, reg_on_X, reg_of_Y):
     n = X.size
     R_total = 0
-    
-    R_i = (X - reg_on_X.predict(Z).reshape(-1,)) * (Y - reg_on_Y.predict(Z).reshape(-1,))
+
+    R_i = (X - reg_on_X.predict(Z).reshape(-1,)) * (Y - reg_of_Y)
+#    R_i = (X - reg_on_X.predict(Z).reshape(-1,)) * (Y - reg_on_Y.predict(Z).reshape(-1,))
     
     numerator = (np.sqrt(n)/n) * np.sum(R_i)
 
@@ -84,14 +85,22 @@ def multivariate_covariance_metric(X, Y, Z, reg_func_X, reg_func_Y):
     residual_array = np.empty((dim_x, dim_y), dtype=object) # X by Y array of residual arrays (This is ~ (X, Y, N) array)
     gcm_array = np.empty((dim_x, dim_y), dtype=float) # X by Y array of GCM values with each pairwise dimension univariate GCM.
 
+    uni_gcm_reg_Y = reg_func_Y().fit(Z, Y) #Creating a complete model that tries to predict all the Isotopologues with the one left out metabolite
+    full_reg_Y = uni_gcm_reg_Y.predict(Z) #Predict the entire set of output isotopologues beforehand. 
+    
     for i in range(dim_x):
         uni_gcm_X = X[:,i].reshape(-1,) 
         uni_gcm_reg_X = reg_func_X().fit(Z, uni_gcm_X)
+
         for j in range(dim_y):
             print(f"Y is currently {j}") 
-            uni_gcm_Y = Y[:, j].reshape(-1,) 
-            uni_gcm_reg_Y = reg_func_Y().fit(Z, uni_gcm_Y)
-            gcm_array[i,j], residual_array[i,j] = univariate_covariance_metric(uni_gcm_X, uni_gcm_Y, Z, uni_gcm_reg_X, uni_gcm_reg_Y)
+            uni_gcm_Y = Y[:, j].reshape(-1,) #Take the specific dimension from the Y output. 
+            uni_reg_Y = full_reg_Y[:, j].reshape(-1,) #Take the specific dimension from the PREDICTED Y output
+            gcm_array[i,j], residual_array[i,j] = univariate_covariance_metric(uni_gcm_X, uni_gcm_Y, Z, uni_gcm_reg_X, uni_reg_Y)
+
+#            uni_gcm_Y = Y[:, j].reshape(-1,) 
+#            uni_gcm_reg_Y = reg_func_Y().fit(Z, uni_gcm_Y)
+#            gcm_array[i,j], residual_array[i,j] = univariate_covariance_metric(uni_gcm_X, uni_gcm_Y, Z, uni_gcm_reg_X, uni_gcm_reg_Y)
     
     return gcm_array, residual_array
 
