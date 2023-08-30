@@ -7,15 +7,68 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import math 
 import isotopolouge_imputer as isoimpute
+from matplotlib import gridspec
+
+
+# ================================================== CORR HEATMAPS ==================================================
+'''
+Pairwise correlation coefficients show the strength and direction of the linear relationship between pairs of variables. 
+These coefficients indicate how changes in one variable relate to changes in another variable. Correlation coefficients 
+are often used to analyze the association between variables and can provide insights into patterns and trends in the data. 
+The most commonly used correlation coefficient is the Pearson correlation coefficient.
+    - In statistics, the ** Pearson correlation coefficient (PCC) ** is a correlation coefficient that measures linear correlation 
+    between two sets of data. It is the ratio between the covariance of two variables and the product of their standard deviations; 
+    thus, it is essentially a normalized measurement of the covariance, such that the result always has a value between -1 and 1.
+    - ** Covariance ** is a statistical measure that quantifies the degree to which two random variables change together. 
+        - cov(X, Y) = E[(X - E[X])(Y - E[Y])]
+'''
 
 def corr_heatmap(input_df, ax = None, cbar = True):
     '''Takes a dataframe and displays it's pairwise correlation coefficients as a heatmap'''
+
     corr = input_df.corr()
     # f, ax = plt.subplots(figsize=(8, 6))
     mask = np.triu(np.ones_like(corr, dtype=bool))
     cmap = sns.diverging_palette(230, 20, as_cmap=True)
     sns.heatmap(corr, vmin=-0.6, vmax=0.8, annot=False, cbar=cbar, mask = mask, cmap=cmap, ax = ax)
-    
+
+def single_isos_corr_heatmap(df1, df2, metabs_to_check = [], ax=None, cbar=True):
+    '''
+    Takes in two dataframes (ion counts and isotopologues) and plots a heatmap of the pairwise correlation coefficients between all
+    of the metabolites, and the isotopologues of only the metabolites that are listed.
+    '''
+
+
+
+def compare_corr_heatmap(df1, df2, ax=None, cbar=True):
+    '''
+    Takes two dataframes and displays the pairwise correlation coefficients as a heatmap between df1 and df2.
+    df1 will be on the y-axis, and df2 will be on the x-axis of the heatmap.
+    '''
+    # Concatenating the dataframes horizontally (along columns)
+    concatenated_df = pd.concat([df1, df2], axis=1)
+    corr = concatenated_df.corr()
+
+    # Create the heatmap
+    cmap = sns.diverging_palette(230, 20, as_cmap=True)
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 6))
+
+    # Slice the heatmap to show only df1 columns on y-axis and df2 columns on x-axis
+    df1_cols = len(df1.columns)
+    sns.heatmap(corr.iloc[:df1_cols, df1_cols:], vmin=-0.6, vmax=0.8,
+                annot=False, cbar=cbar, cmap=cmap, ax=ax)
+
+    # Set axis labels and title
+    ax.set_xticklabels(df2.columns, rotation=45, ha="right")
+    ax.set_yticklabels(df1.columns, rotation=0)
+    ax.set_title('Pairwise Correlation Coefficients Heatmap')
+
+
+    # Show the plot
+    plt.show()
+   
 def double_corr_heatmap(data1, data2, title = "Pairwise Correlation Coefficients", t1 = "Regular Data", t2 = "Ranked Data"):
     fig, axes = plt.subplots(1, 2, figsize=(20, 8))
     fig.suptitle(title)
@@ -292,6 +345,8 @@ def plot_brain(brain_data, iso_index = 0, iso_name = None, normalize = False, cm
     plt.show()
 
 
+# ================================================== MULTI-BRAIN VISUALIZATIONS ==================================================
+
 def plot_multiple_brains(brain_data, title = 'Plotting Metabolites', indices_to_plot = [], cmin=0, cmax = 1):
     '''
     Plot a grid of brain images given a dataframe containing the data. Each column in the dataframe represents a 
@@ -355,25 +410,45 @@ def plot_multiple_brains(brain_data, title = 'Plotting Metabolites', indices_to_
 
             brain = np.rot90(brain)
 
-
-            '''
-            norm = np.linalg.norm(brain)        # To find the norm of the array
-            brain_to_plot = brain/norm          # Formula used to perform array normalization
-            print(norm, brain_to_plot)
-            '''
             max_index = brain.argmax()
             max_tuple = np.unravel_index(max_index, brain.shape)
-            # print(brain[max_tuple])
             
             c = axs[plt_row, plt_column].pcolormesh(brain, cmap = newcmp, vmin = cmin, vmax = cmax)
-            # axs[plt_row, plt_column].clim(cmin,cmax)
 
             axs[plt_row, plt_column].set_title(f'{iso_to_plot}', fontsize = 35, fontweight ="bold")
             iso_num += 1
 
-    # fig.suptitle(title, size = 32)
+    top_size = 0.92
+    fig.suptitle(title, fontsize = 50, fontweight ="bold")
+    fig.subplots_adjust(top=top_size, hspace=0.1)
+    
     plt.show()
 
+
+def plot_metab_and_isos(ion_df, iso_df, coord_df = None, metab_to_plot = "", title = None):
+    '''
+    Plot a metabolite and all of it's corresponding isotopologues. 
+
+    Parameters:
+        - ion_df (dataframe): num_observations x num_metabolites dataframe
+        - iso_df (dataframe): num_observations x num_isotopologues dataframe
+        - coord_df (dataframe): num_observations x 2 (x and y) dataframe with the coordinates corresponding to ion_df and iso_df
+        - metab_to_plot (str): the name of the metabolite to plot (must be in ion_df columns and have corresponding isos in iso_df)
+    '''
+    # List of all isotopologue names to pull relevant isos from
+    full_isotopologues_names = iso_df.columns.to_list()
+    # List of only children isotopologue names
+    iso_list = [iso for iso in full_isotopologues_names if metab_to_plot in iso]
+
+    # Concatenate the dataframes to be able to use the plot_multiple_brains functionality
+    plotting_df = pd.concat([coord_df, ion_df[metab_to_plot], iso_df[iso_list]], axis=1)
+
+    plot_title = title if title else f"{metab_to_plot} + Isotopologues"
+    plot_multiple_brains(plotting_df, title = plot_title, indices_to_plot = [x for x in range(2,len(plotting_df.columns))])
+
+    return None
+
+# ================================================== RESULTS ==================================================
 
 def stacked_bar_plot(metabs_success_dict, num_bars = 10):
     metab_names = list(metabs_success_dict.keys())
