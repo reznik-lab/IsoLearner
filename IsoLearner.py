@@ -35,7 +35,8 @@ class IsoLearner:
                 morans_path = 'valid-metabs-brain.txt', 
                 tracer = 'B3HB', 
                 FML = True, 
-                num_replicates = 6, 
+                num_replicates = 6,
+                morans_strat = 1, 
                 morans_cutoff = 0.75):
         
         '''
@@ -47,6 +48,7 @@ class IsoLearner:
             - Precuror 'B' stands for brain data, 'G' for Glucose
         - FML (bool): flag indicating whether to use the partial metabolite list (19 metabs) or full metabolite list 
         - num_replicates (int): The number of replicates for this tracer -> how many replicates should match for a metabolite to be kept
+        - morans_strat (int): indicator for which moran's I strategy to use (detailed in generate_valid_metabs)
         - morans_cutoff (float): The moran's I cutoff score for a metabolite to be kept. 
         '''
 
@@ -56,6 +58,7 @@ class IsoLearner:
         self.tracer = tracer
         self.FML = FML
         self.num_replicates = num_replicates
+        self.morans_strat = morans_strat
         self.morans_cutoff = morans_cutoff
 
         print("Initializing IsoLearner")
@@ -76,12 +79,15 @@ class IsoLearner:
     def generate_filepath_list(self):
         '''
         Returns relative paths of data files as two lists. If sample includes both normal and ketogenic replicates, the ND replicates are first, and then KD. 
+            - File names are expected to be in the form '{Tissue (B for brain)} - {Diet type (KD or ND)} - {Replicate Number} - {FML (full metabolite list)} - {ion counts or isotopologues} - {ranks}.csv"
             - Example Filename: 'B3HB-KD-M1-FML-ioncounts-ranks.csv'
 
         Returns: 
             - ion_counts_paths (list): list of filenames with ion_count data
             - isotopologues_paths (list): list of filenames with iso data
         '''
+
+        # Qualifier for whether the full metabolite list or partial metabolite list is being used
         iso_path = 'FML-isotopolouges-ranks' if self.FML else 'isotopolouges-ranks'
         ion_path = 'FML-ioncounts-ranks' if self.FML else 'ioncounts-ranks'
 
@@ -191,12 +197,18 @@ class IsoLearner:
     
 
     # ===================================================================================================================================
-    # <============================================== VALID METABS FROM TXT ============================================================>
+    # <============================================== VALID METABS FROM MORANS TXT =====================================================>
     def generate_valid_metabs(self): 
         '''
         For a given tracer/tissue combination, read in the metabolites and corresponding morans scores of each replicate. Use these to create a list of metabolites 
         that should be kept for model consideration based on the morans cutoff, and identify the isotopologues that need to be removed.
         
+        There are two modes this function will operate in, depending on the Moran's I Strategy being implemented (morans_strat):
+            1). morans_strat = (1) cull_bloodline: Using this strategy, Moran's I is taken for all of the METABOLITES (ion_counts)
+                - Metabolites that fail the metric are removed from consideration, as well as all of their isotopologues (their "bloodline")
+            2). morans_strat = (2) darwinism: In this strategy, Moran's I is taken on all of the ISOTOPOLOGUES (isos)
+                - All of the metabolites are kept, and only isotopologues that fail the metric are discarded. 
+
         This function DOES NOT actually load in any data at all, it simply reads in from the txt file. 
 
         Possible point of failure: the way the first line of each replicate entry in the txt file is named could have an effect on it working properly. Put some jank for now. 
@@ -226,12 +238,15 @@ class IsoLearner:
         # Since they are being read in from a txt, need to do some string processing to convert to proper list format.
         chars_to_remove = ["[", "'", "]"]
 
-        for ion_path in self.ion_paths:
+        # Whether we should load in the ion_count data or isotopologue data based on moran's strat being implemented
+        data_file_paths = self.ion_paths if self.morans_strat == 1 else self.iso_paths
+
+        for data_path in data_file_paths:
             # Convert the path name to match how it appears in the txt file           
-            ion_path = ion_path.replace(self.absolute_data_path,'')
-            ion_path = f'{ion_path[1:-20]}\n'
+            data_path = data_path.replace(self.absolute_data_path,'')
+            data_path = f'{data_path[1:-20]}\n'
             # Obtain the filename index, use as reference point to access the metab names and morans scores. 
-            index = lines.index(ion_path)
+            index = lines.index(data_path)
 
             # Read in the metabs and morans strings without the new line character
             metabs_string = lines[index+2][0:-1]    
