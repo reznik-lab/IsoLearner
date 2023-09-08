@@ -450,13 +450,16 @@ def plot_metab_and_isos(ion_df, iso_df, coord_df = None, metab_to_plot = "", tit
 
 # ================================================== RESULTS ==================================================
 
-def stacked_bar_plot(metabs_success_dict, num_bars = 10):
+def stacked_bar_plot(metabs_success_dict, num_bars = None, plot_total_success = False):
+    # Extract the amount of successfully predicted, poorly predicted, and total number of isotopologues per metabolite in the dictionary
     metab_names = list(metabs_success_dict.keys())
     successful_metabs_nums = np.array([metabs_success_dict[metab_names[i]][0] for i in range(len(metab_names))])
     unsuccessful_metabs_nums = np.array([metabs_success_dict[metab_names[i]][1] for i in range(len(metab_names))])
     total_metabs_nums = np.array([metabs_success_dict[metab_names[i]][2] for i in range(len(metab_names))])
     removed = total_metabs_nums - successful_metabs_nums - unsuccessful_metabs_nums
-        
+    
+    # Default is to display the total number of metabolites
+    num_bars = num_bars if num_bars else len(metab_names)
     metabolites = tuple(i for i in metab_names[0:num_bars])
 
     weight_counts = {
@@ -467,7 +470,7 @@ def stacked_bar_plot(metabs_success_dict, num_bars = 10):
 
     width = 0.5
 
-    fig, ax = plt.subplots(figsize = (10,10))
+    fig, ax = plt.subplots(figsize = (15,10))
     bottom = np.zeros(num_bars)
 
     for boolean, weight_count in weight_counts.items():
@@ -484,19 +487,19 @@ def stacked_bar_plot(metabs_success_dict, num_bars = 10):
 
     plt.show()
 
+    if plot_total_success:
+        # Bar 1: Removed Isotopologues vs Valid Isotopologues
+        # Bar 2: Successfully predicted vs not sucessfully predicted
+        valid_vs_invalid = np.array([np.sum(successful_metabs_nums) + np.sum(unsuccessful_metabs_nums), np.sum(removed)])
+        series = pd.Series(valid_vs_invalid, index=['Valid', 'Invalid'], name='Total Isotopologues')
+        succesful_vs_unsuccessful = np.array([np.sum(successful_metabs_nums), np.sum(unsuccessful_metabs_nums)])
+        series2 = pd.Series(succesful_vs_unsuccessful, index=['Sucessfully predicted', 'Unsuccessfully predicted'], name='Valid Isotopologues')
 
-    # Bar 1: Removed Isotopologues vs Valid Isotopologues
-    # Bar 2: Successfully predicted vs not sucessfully predicted
-    valid_vs_invalid = np.array([np.sum(successful_metabs_nums) + np.sum(unsuccessful_metabs_nums), np.sum(removed)])
-    series = pd.Series(valid_vs_invalid, index=['Valid', 'Invalid'], name='Total Isotopologues')
-    succesful_vs_unsuccessful = np.array([np.sum(successful_metabs_nums), np.sum(unsuccessful_metabs_nums)])
-    series2 = pd.Series(succesful_vs_unsuccessful, index=['Sucessfully predicted', 'Unsuccessfully predicted'], name='Valid Isotopologues')
-
-    # Initialise the subplot function using number of rows and columns
-    
-    # figure, axis = plt.subplots(1, 2)
-    pd.DataFrame(series).T.plot.bar(rot = 0, stacked=True, figsize = (5, 7), color={"Valid": "blue", "Invalid": "green"})
-    pd.DataFrame(series2).T.plot.bar(rot = 0, stacked=True, figsize = (5, 7), color={"Sucessfully predicted": "blue", "Unsuccessfully predicted": "red"})
+        # Initialise the subplot function using number of rows and columns
+        
+        # figure, axis = plt.subplots(1, 2)
+        pd.DataFrame(series).T.plot.bar(rot = 0, stacked=True, figsize = (5, 7), color={"Valid": "blue", "Invalid": "green"})
+        pd.DataFrame(series2).T.plot.bar(rot = 0, stacked=True, figsize = (5, 7), color={"Sucessfully predicted": "blue", "Unsuccessfully predicted": "red"})
 
 def plot_ground_vs_pred(ground_truth_df, predicted_df, coords_df, title = 'Plotting Metabolites', indices_to_plot = [], iso_names_to_plot = [], cmin=0, cmax = 1):
     ground_truth_df = ground_truth_df.drop(labels = ['x', 'y'], axis = 1, errors = 'ignore')

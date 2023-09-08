@@ -97,27 +97,34 @@ def multiple_regression_model_2(num_ion_counts, num_isotopolouges, lambda_val):
 
 def FML_regression_model(num_ion_counts, num_isotopolouges, lambda_val):
     model = Sequential([
-        # Input Layer
+        # Original: 128, 128, 256, 256, 256, 256, 128
+        # Layer 1
         Dense(128, input_dim = num_ion_counts, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
-
+        
+        # Layer 2
         Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         
+        # Layer 3
         Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         Dropout(0.25),
         
+        # Layer 4
         Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         
+        # Layer 5
         Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         
+        # Layer 6
         Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         Dropout(0.25),      
         
+        # Layer 7
         Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
         BatchNormalization(),
         

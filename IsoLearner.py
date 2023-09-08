@@ -37,7 +37,8 @@ class IsoLearner:
                 FML = True, 
                 num_replicates = 6,
                 morans_strat = 1, 
-                morans_cutoff = 0.75):
+                morans_cutoff = 0.75,
+                min_replicates = 3):
         
         '''
         Parameters:
@@ -60,20 +61,27 @@ class IsoLearner:
         self.num_replicates = num_replicates
         self.morans_strat = morans_strat
         self.morans_cutoff = morans_cutoff
+        self.min_replicates = min_replicates
 
         print("Initializing IsoLearner")
 
         # Generate filepath list
         self.ion_paths, self.iso_paths = self.generate_filepath_list()
 
-        # Generate list of metabolites to be kept for imputation
-        print("Generating List of valid metabolites from Moran's I calculations ", end = "")
-        self.valid_metabolites = self.generate_valid_metabs()
-        
-        # Returns list of cleaned replicate data
-        print("Cleaning data ", end = "")
-        self.clean_ion_data, self.clean_iso_data, self.new_metabolite_names, self.new_iso_names, self.coords_df = self.preserve_good_metabs()
-        self.all_models = []
+        if self.morans_strat == 1:
+            # Generate list of metabolites to be kept for imputation
+            print("Generating List of valid metabolites from Moran's I calculations ", end = "")
+            self.valid_metabolites = self.generate_valid_metabs()
+            
+            # Returns list of cleaned replicate data
+            print("Cleaning data ", end = "")
+            self.clean_ion_data, self.clean_iso_data, self.new_metabolite_names, self.new_iso_names, self.coords_df = self.preserve_good_metabs()
+            self.all_models = []
+        else:
+            print("Cleaning data with strategy 2: ", end = "")
+            _ = self.load_morans_data()
+            self.metab_dict, self.good_iso_list = self.morans_df_to_dict(num_replicates=3,morans_cutoff=0.6)
+            self.clean_ion_data, self.clean_iso_data, self.new_metabolite_names, self.new_iso_names, self.coords_df = self.preserve_good_metabs(good_iso_names=self.good_iso_list)
         
     # ============================================== LIST OF FILEPATHS =====================================================================
     def generate_filepath_list(self):
@@ -240,14 +248,13 @@ class IsoLearner:
 
         # Whether we should load in the ion_count data or isotopologue data based on moran's strat being implemented
         data_file_paths = self.ion_paths if self.morans_strat == 1 else self.iso_paths
-
         for data_path in data_file_paths:
             # Convert the path name to match how it appears in the txt file           
             data_path = data_path.replace(self.absolute_data_path,'')
-            data_path = f'{data_path[1:-20]}\n'
+            data_path = f"{'-'.join(data_path[1:].split('-')[:-2])}\n"
+
             # Obtain the filename index, use as reference point to access the metab names and morans scores. 
             index = lines.index(data_path)
-
             # Read in the metabs and morans strings without the new line character
             metabs_string = lines[index+2][0:-1]    
             morans_string = lines[index+4][0:-1]
@@ -339,8 +346,13 @@ class IsoLearner:
             ion_data = self.get_data(file_name = ion_count_path, full_path = True)
             # Get list of metabolites for that replicate
             metabolite_names = list(ion_data.columns)
-            # List of metabolites that must be dropped that are present in this replicate 
-            metab_to_drop = [metab for metab in metabolite_names if metab in ion_inconsistencies or not metab in self.valid_metabolites]
+
+            # List of metabolites that must be dropped that are present in this replicate - drop based on Moran's strat
+            if self.morans_strat == 1:
+                metab_to_drop = [metab for metab in metabolite_names if metab in ion_inconsistencies or not metab in self.valid_metabolites]
+            else:
+                metab_to_drop = [metab for metab in metabolite_names if metab in ion_inconsistencies]
+
             # Drop the unneeded metabolites
             ion_data = ion_data.drop(labels = metab_to_drop, axis = 1)
             new_metabolite_names = ion_data.columns
@@ -362,10 +374,14 @@ class IsoLearner:
         for i, iso_path in enumerate(self.iso_paths):
             iso_data = self.get_data(file_name = iso_path, full_path = True)
             iso_names = iso_data.columns
+
             if good_iso_names:
-                iso_to_drop = [iso for iso in iso_names if iso in iso_inconsistencies or not iso[0:-5] in self.valid_metabolites or not iso in good_iso_names]
+                iso_to_drop = [iso for iso in iso_names if iso in iso_inconsistencies or not iso in good_iso_names]
+            elif self.morans_strat == 2:
+                iso_to_drop = [iso for iso in iso_names if iso in iso_inconsistencies or iso not in self.good_isotopologues]
             else:
                 iso_to_drop = [iso for iso in iso_names if iso in iso_inconsistencies or not iso[0:-5] in self.valid_metabolites]
+
 
             iso_data = iso_data.drop(labels = iso_to_drop, axis = 1)
             new_iso_names = iso_data.columns
@@ -437,28 +453,29 @@ class IsoLearner:
     # <==================================================== TRAINING ===================================================================>
     def FML_regression_model(self, num_ion_counts, num_isotopolouges, lambda_val):
         model = Sequential([
-            # Input Layer
-            Dense(128, input_dim = num_ion_counts, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            # Original: 128, 128, 256, 256, 256, 256, 128
+            # Layer 1
+            Dense(256, input_dim = num_ion_counts, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
 
-            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             Dropout(0.25),
             
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             Dropout(0.25),      
             
-            Dense(128, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
+            Dense(512, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(lambda_val)),
             BatchNormalization(),
             
             # Removed relu to allow negative 
@@ -763,7 +780,11 @@ class IsoLearner:
                 metabs_success_count[metab_name][2] += 1
 
         # print(metabs_success_count)
-        stacked_bar_plot(metabs_success_count, num_bars=num_bars)#len(metabs_set))
+        myKeys = list(metabs_success_count.keys())
+        myKeys.sort()
+        sorted_dict = {i: metabs_success_count[i] for i in myKeys}
+
+        stacked_bar_plot(sorted_dict, num_bars=num_bars)#len(metabs_set))
 
         return isotopologue_metrics
     
@@ -795,7 +816,7 @@ class IsoLearner:
    
         return ground_truth, predictions
    
-    def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 65):
+    def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 88):
         '''
         Takes the ground truth and predicted values of a series of replicates, concatenate them all and calculate the evaluation metrics as a form of cross validation. 
 
@@ -820,12 +841,12 @@ class IsoLearner:
             predicts = pd.concat([predicts, data], ignore_index=True, axis = 0)
 
         print(grounds.shape, predicts.shape)
-        val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
+        # val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
 
         df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
         temp = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars)
 
-        return val_sorted_dataframe
+        # return val_sorted_dataframe
 
     # <==================================================== EVALUATION ===================================================================>
     # ===================================================================================================================================
@@ -849,6 +870,117 @@ class IsoLearner:
         return shortened_metabolites, shortened_isotopologues
 
     # <==================================================== BLACK BOX FEATURE EVAL ===================================================================>
+    # =================================================================================================================================================
+
+    # =================================================================================================================================================
+    # <====================================================== MORANS PROCESSING ======================================================================>
+    def load_morans_data(self):
+        '''
+        Loads in morans data from a text file into a dataframe with columns [filename, metabolite, morans_score]
+        '''
+
+        # Initialize lists to store data
+        files = []
+        metabolites = []
+        morans_scores = []
+
+        # Open the text file for reading
+        with open(self.morans_path, 'r') as file:
+            lines = file.readlines()
+            i = 0
+            
+            while i < len(lines):
+                # Extract the file name
+                file_name = lines[i].strip()[-9:]
+                
+                # Skip the "Metab Names:" line
+                i += 2
+            
+                # Extract metabolite names
+                metab_names = eval(lines[i])
+                
+                # Skip the "Morans Vals:" line
+                i += 2
+                
+                # Extract Morans values
+                morans_vals = eval(lines[i])
+                
+                # Skip the "Valid Isotopolouges:" line
+                i += 2
+                
+                # Extract valid isotopologues
+                valid_isotopologues = eval(lines[i])
+                
+                # Skip the "Invalid Isotopolouges:" line
+                i += 2
+                
+                # Extract invalid isotopologues
+                invalid_isotopologues = eval(lines[i])
+                
+                # Determine the number of relevant metabolites
+                num_metabolites = min(len(metab_names), len(morans_vals))
+                
+                # Create data for the current file and append to lists
+                for j in range(num_metabolites):
+                    files.append(file_name)
+                    metabolites.append(metab_names[j])
+                    morans_scores.append(morans_vals[j])
+                
+                # Move to the next set of data
+                i += 1
+
+        # Create a DataFrame
+        data = {'File': files, 'Metabolite': metabolites, 'Morans_score': morans_scores}
+        df = pd.DataFrame(data)
+
+        # Sort the DataFrame by the 'metabolite' column
+        df = df.sort_values(by='Metabolite')
+
+        # Reset the index to have a clean index after sorting
+        df.reset_index(drop=True, inplace=True)
+
+        self.morans_df = df
+
+        return df
+
+    def morans_df_to_dict(self, df = None, num_replicates = None, morans_cutoff = None):
+        morans_cutoff = self.morans_cutoff if not morans_cutoff else morans_cutoff
+        num_replicates = self.min_replicates if not num_replicates else num_replicates
+
+        # Create an empty dictionary to store the data
+        metabolite_dict = {}
+        good_iso_list = []
+
+        # Iterate through the DataFrame
+        for index, row in self.morans_df.iterrows():
+            metabolite = row['Metabolite']
+            morans_score = row['Morans_score']
+            file_name = row['File']
+            
+            # Check if the metabolite is already in the dictionary
+            if metabolite in metabolite_dict:
+                # Append the Morans score to the existing list
+                metabolite_dict[metabolite][0].append((file_name, morans_score))
+            else:
+                # Create a new list with the Morans score and add it to the dictionary
+                metabolite_dict[metabolite] = ([(file_name, morans_score)], None, None)
+
+        # Reorder the values list based on the specified order
+        for key, value in metabolite_dict.items():
+            morans_list = value[0]
+            average = sum(v for k, v in morans_list) / len(morans_list)
+            higher_than_cutoff = sum(1 for k, v in morans_list if v > morans_cutoff) >= num_replicates
+            metabolite_dict[key] = (morans_list, average, higher_than_cutoff)
+            if higher_than_cutoff:
+                good_iso_list.append(key)
+
+        good_iso_list.sort()
+        self.good_isotopologues = good_iso_list
+
+        # Display the dictionary
+        return metabolite_dict, good_iso_list
+
+    # <====================================================== MORANS PROCESSING ======================================================================>
     # =================================================================================================================================================
 
 # ================================================================= ISOLEARNER =================================================================
