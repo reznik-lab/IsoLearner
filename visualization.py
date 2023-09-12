@@ -470,17 +470,17 @@ def stacked_bar_plot(metabs_success_dict, num_bars = None, plot_total_success = 
 
     width = 0.5
 
-    fig, ax = plt.subplots(figsize = (15,10))
+    fig, ax = plt.subplots(figsize = (10,15))
     bottom = np.zeros(num_bars)
 
     for boolean, weight_count in weight_counts.items():
-        p = ax.bar(metabolites, weight_count, width, label=boolean, bottom=bottom)
+        p = ax.barh(metabolites, weight_count, width, label=boolean, left = bottom)
         bottom += weight_count
 
     ax.set_title("Ratio of isotopologues successfully predicted per metabolite")
     
-    plt.xlabel("Metabolites", fontsize = 20)
-    plt.ylabel("Num of Isotopologues", fontsize = 20)
+    plt.xlabel("Num of Isotopologues", fontsize = 20)
+    plt.ylabel("Metabolites", fontsize = 20)
     ax.legend(loc="upper right")
     plt.xticks(rotation=90)
     ax.title.set_size(20)

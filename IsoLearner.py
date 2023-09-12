@@ -18,6 +18,7 @@ from visualization import *
 from collections import Counter
 from statsmodels.stats.multitest import multipletests
 import copy
+from skimage.metrics import structural_similarity as ssim
 
 from sklearn.metrics import mean_squared_error # for calculating the cost function
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -841,7 +842,7 @@ class IsoLearner:
             predicts = pd.concat([predicts, data], ignore_index=True, axis = 0)
 
         print(grounds.shape, predicts.shape)
-        # val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
+        val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
 
         df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
         temp = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars)
@@ -983,6 +984,138 @@ class IsoLearner:
     # <====================================================== MORANS PROCESSING ======================================================================>
     # =================================================================================================================================================
 
+    def scatterplot_replicates(self, predicted, actual, metabolite_name):
+        """
+        Create a single scatterplot of actual vs predicted values for a given metabolite across 6 replicates.
+        
+        Args:
+            predicted (list of DataFrames): List of DataFrames containing predicted values.
+            actual (list of DataFrames): List of DataFrames containing actual values (corresponding to predicted values).
+            metabolite_name (str): Name of the metabolite column to be plotted.
+        
+        Returns:
+            None (displays a combined scatterplot).
+        """
+        marker_size = 10
+        buffer_width = 0.1
+
+        # Check if the number of replicates matches
+        if len(predicted) != len(actual):
+            raise ValueError("Number of replicates in predicted and actual data must be the same.")
+
+        # Create a color palette for the replicates
+        colors = ['b', 'g', 'r', 'c', 'm', 'y']
+        # Create a color map for replicates
+        colormap = plt.cm.get_cmap("tab10", len(predicted))
+
+
+        # Create a single scatterplot
+        plt.subplots(figsize=(6, 6))
+        plt.title(f'{metabolite_name}')
+
+        for i in range(len(predicted)):
+            replicate_name = f'Replicate {i + 1}'
+            replicate_color = colors[i % len(colors)]
+            # Use the colormap to assign colors based on the replicate index
+            #replicate_color = colormap(i)
+
+
+            # Extract data for the current replicate
+            df_predicted = predicted[i]
+            df_actual = actual[i]
+
+            # Check if the metabolite exists in the dataframes
+            if metabolite_name not in df_predicted.columns or metabolite_name not in df_actual.columns:
+                print(replicate_name + " (Metabolite not found)")
+                continue
+
+            # Calculate Euclidean distances from the points to the unit line
+            euclidean_distances = np.abs(df_actual[metabolite_name] - df_predicted[metabolite_name])
+
+            # Define buffer zones based on buffer_width
+            within_buffer = euclidean_distances <= buffer_width
+
+            # Plot points within buffer zones with adjusted transparency
+            plt.scatter(
+                df_actual[metabolite_name][within_buffer],
+                df_predicted[metabolite_name][within_buffer],
+                c=replicate_color,
+                marker='o',
+                edgecolor=replicate_color,  # Outline color
+                s=marker_size,  # Marker size (variable)
+                alpha=0.0,  # Adjust transparency for points within buffer zones
+                label=replicate_name,
+            )
+
+            # Plot points outside buffer zones with full transparency
+            plt.scatter(
+                df_actual[metabolite_name][~within_buffer],
+                df_predicted[metabolite_name][~within_buffer],
+                c=replicate_color,
+                marker='.',
+                edgecolor=replicate_color,  # Outline color
+                s=marker_size,  # Marker size (variable)
+                alpha=1,  # Full transparency for points outside buffer zones
+            )
+
+
+            # Calculate and plot the line of best fit with bolder lines
+            m, b = np.polyfit(df_actual[metabolite_name], df_predicted[metabolite_name], 1)
+            plt.plot(
+                df_actual[metabolite_name],
+                m * df_actual[metabolite_name] + b,
+                color=replicate_color,
+                linestyle='--',
+                linewidth=2,  # Adjust line width for prominence
+            )
+
+        # Add labels and legend
+        plt.xlabel('Actual')
+        plt.ylabel('Predicted')
+        legend_handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[i], markersize=10, label=f'Replicate {i + 1}') for i in range(len(predicted))]
+        plt.legend(handles=legend_handles)
+        # Set x and y limits between 0 and 1
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+
+        plt.show()
+
+
+    def structural_similarity_index(self, predicted, actual, metabolite_name, replicate_index = 0):
+        # https://scikit-image.org/docs/stable/api/skimage.metrics.html#skimage.metrics.structural_similarity
+
+        # Pull the selected metabolite from 
+        coords_df = self.coords_df[replicate_index]
+
+        # Setting x and y boundaries for individual plots, shifted down
+        x_min = coords_df['x'].min()
+        x_max = coords_df['x'].max()
+        y_min = coords_df['y'].min()
+        y_max = coords_df['y'].max()
+
+        coords_df['x'] = coords_df['x'] - x_min
+        coords_df['y'] = coords_df['y'] - y_min
+
+        plotting_df = coords_df[['x', 'y']]
+        plotting_df['predicted'] = predicted[replicate_index][metabolite_name]
+        plotting_df['actual'] = actual[replicate_index][metabolite_name]
+
+        x_range = x_max - x_min + 1
+        y_range = y_max - y_min + 1
+
+        brain_actual = np.zeros((x_range,y_range))
+        brain_predicted = np.zeros((x_range,y_range)) 
+ 
+        for index, row in plotting_df.iterrows():
+            brain_actual[int(row['x']), int(row['y'])] = row['actual']
+            brain_predicted[int(row['x']), int(row['y'])] = row['predicted']
+
+        brain_actual = np.rot90(brain_actual)
+        brain_predicted = np.rot90(brain_predicted)
+
+        SSIM = ssim(brain_actual, brain_predicted, data_range=brain_actual.max() - brain_actual.min())
+
+        return SSIM
 # ================================================================= ISOLEARNER =================================================================
 
 
