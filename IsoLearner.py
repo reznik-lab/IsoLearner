@@ -785,9 +785,9 @@ class IsoLearner:
         myKeys.sort()
         sorted_dict = {i: metabs_success_count[i] for i in myKeys}
 
-        stacked_bar_plot(sorted_dict, num_bars=num_bars)#len(metabs_set))
+        stacked_bar_plot(sorted_dict, num_bars=num_bars, plot_total_success= True)#len(metabs_set))
 
-        return isotopologue_metrics
+        return isotopologue_metrics, metabs_success_count
     
     def cross_validation_testing(self, checkpoints_dir_label = '3HB', checkpoints_path = "./saved-weights"):
         checkpoints_dir = f'{checkpoints_path}/cross-validation-{checkpoints_dir_label}'
@@ -844,10 +844,11 @@ class IsoLearner:
         print(grounds.shape, predicts.shape)
         val_sorted_dataframe = self.spearman_rankings(grounds, predicts, plot=True)['isotopologue'] 
 
-        df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
-        temp = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars)
+        # df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
+        # temp = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars)
 
         # return val_sorted_dataframe
+        # return df 
 
     # <==================================================== EVALUATION ===================================================================>
     # ===================================================================================================================================

@@ -270,12 +270,15 @@ def ion_count_isotopolouge_corr(ion_counts, isotopolouges, ion_index, iso_start_
     plt.show()
 
 
-def median_rho_feature_plot(data):
+def median_rho_feature_plot(data, cutoff = 0.6):
     bar_df = (data
           .sort_values(by=["median_rho"], ascending=False)
           )
     plt.rcParams['figure.figsize'] = [20, 18]
     plt.bar(bar_df["isotopologue"], bar_df["median_rho"], color=bar_df["color"])
+    # Add a horizontal line at the cutoff value
+    plt.axhline(y=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff})')
+
     plt.xlabel("isotopologue")
     plt.ylabel("median rho")
     plt.title("median rho for isotopolouges")
