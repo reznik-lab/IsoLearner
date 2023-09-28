@@ -277,7 +277,7 @@ def median_rho_feature_plot(data, cutoff = 0.6):
     plt.rcParams['figure.figsize'] = [20, 18]
     plt.bar(bar_df["isotopologue"], bar_df["median_rho"], color=bar_df["color"])
     # Add a horizontal line at the cutoff value
-    plt.axhline(y=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff})')
+    plt.axhline(y=cutoff, color='red', linestyle='--', linewidth=2.5, label=f'Cutoff ({cutoff})')
 
     plt.xlabel("isotopologue")
     plt.ylabel("median rho")
@@ -453,7 +453,7 @@ def plot_metab_and_isos(ion_df, iso_df, coord_df = None, metab_to_plot = "", tit
 
 # ================================================== RESULTS ==================================================
 
-def stacked_bar_plot(metabs_success_dict, num_bars = None, plot_total_success = False):
+def stacked_bar_plot(metabs_success_dict, num_bars = 115, plot_total_success = False):
     # Extract the amount of successfully predicted, poorly predicted, and total number of isotopologues per metabolite in the dictionary
     metab_names = list(metabs_success_dict.keys())
     successful_metabs_nums = np.array([metabs_success_dict[metab_names[i]][0] for i in range(len(metab_names))])
@@ -462,7 +462,7 @@ def stacked_bar_plot(metabs_success_dict, num_bars = None, plot_total_success = 
     removed = total_metabs_nums - successful_metabs_nums - unsuccessful_metabs_nums
     
     # Default is to display the total number of metabolites
-    num_bars = num_bars if num_bars else len(metab_names)
+    num_bars = len(metab_names)
     metabolites = tuple(i for i in metab_names[0:num_bars])
 
     weight_counts = {
@@ -473,7 +473,10 @@ def stacked_bar_plot(metabs_success_dict, num_bars = None, plot_total_success = 
 
     width = 0.5
 
-    fig, ax = plt.subplots(figsize = (10,15))
+    # Calculate the figure height based on the number of bars
+    figure_height = 5 + 0.15 * len(metabolites)  # Adjust the multiplier as needed
+
+    fig, ax = plt.subplots(figsize = (10,figure_height))
     bottom = np.zeros(num_bars)
 
     for boolean, weight_count in weight_counts.items():
