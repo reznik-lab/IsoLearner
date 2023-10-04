@@ -860,7 +860,7 @@ class IsoLearner:
         df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
         metab_dict = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars, plot = plot)
 
-        return metab_dict
+        return metab_dict, df
         # return val_sorted_dataframe
         # return df 
 
