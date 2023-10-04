@@ -830,7 +830,7 @@ class IsoLearner:
    
         return ground_truth, predictions
    
-    def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 88, plot = True):
+    def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 88, plot = True, SSIM = False):
         '''
         Takes the ground truth and predicted values of a series of replicates, concatenate them all and calculate the evaluation metrics as a form of cross validation. 
 
@@ -855,6 +855,54 @@ class IsoLearner:
             predicts = pd.concat([predicts, data], ignore_index=True, axis = 0)
 
         print(grounds.shape, predicts.shape)
+
+        if SSIM:
+            print("Starting")
+            # Initialize df
+            SSIM_df = pd.DataFrame(index=range(len(ground_replicates)), columns = list(grounds.columns))
+
+            # For each 
+            for replicate_index in range(len(ground_replicates)):
+                print(replicate_index)
+                # Pull the coords data 
+                coords_df = self.coords_df[replicate_index]
+
+                # Setting x and y boundaries for individual plots, shifted down
+                x_min = coords_df['x'].min()
+                x_max = coords_df['x'].max()
+                y_min = coords_df['y'].min()
+                y_max = coords_df['y'].max()
+
+                coords_df['x'] = coords_df['x'] - x_min
+                coords_df['y'] = coords_df['y'] - y_min
+
+                # Rename columns in df_actual by adding " actual" suffix
+                df_actual = ground_replicates[replicate_index].add_suffix(' actual')
+
+                # Rename columns in df_predicted by adding " predicted" suffix
+                df_predicted = predicted_replicates[replicate_index].add_suffix(' predicted')
+
+                # Concatenate the two data frames along columns (axis=1)
+                plotting_df = pd.concat([coords_df, df_actual, df_predicted], axis=1)
+
+                x_range = x_max - x_min + 1
+                y_range = y_max - y_min + 1
+
+                for i, isotopologue in enumerate(list(grounds.columns)):
+                    if i % 50 == 0:
+                        print(i)
+                    
+                    brain_actual = np.zeros((x_range,y_range))
+                    brain_predicted = np.zeros((x_range,y_range)) 
+            
+                    for index, row in plotting_df.iterrows():
+                        brain_actual[int(row['x']), int(row['y'])] = row[f'{isotopologue} actual']
+                        brain_predicted[int(row['x']), int(row['y'])] = row[f'{isotopologue} predicted']
+
+                    SSIM_df.loc[replicate_index, isotopologue] = ssim(brain_actual, brain_predicted, data_range=brain_actual.max() - brain_actual.min())
+
+            return SSIM_df
+
         _ = self.spearman_rankings(grounds, predicts, plot=plot)['isotopologue'] 
         print("Done with spearmans")
         df = self.print_evaluation_metrics(grounds, predicts, num_rows=200, create_df=True, latex_table=False)
