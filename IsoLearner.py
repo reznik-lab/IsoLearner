@@ -405,8 +405,6 @@ class IsoLearner:
 
         return clean_ion_data, clean_iso_data, new_metabolite_names, new_iso_names, coords_df
 
-
-
     # ============================================== Creating Dataset for Training  ===========================================================
     def create_full_dataset(self, ion_dfs, iso_dfs, holdout = True, holdout_index = 0):
         '''
@@ -450,7 +448,6 @@ class IsoLearner:
                 isotopolouges = pd.concat([isotopolouges, data], ignore_index = True, axis = 0)
 
             return ion_counts, isotopolouges
-
 
     # ===================================================================================================================================
     # <==================================================== TRAINING ===================================================================>
@@ -909,9 +906,27 @@ class IsoLearner:
         metab_dict = self.relative_metabolite_success(isotopologue_metrics = df, all_isotopologues=list(grounds.columns), num_bars=num_bars, plot = plot)
 
         return metab_dict, df
-        # return val_sorted_dataframe
-        # return df 
 
+    def get_successful_metabolites(self, evaluation_metrics_df, SSIM_df):
+        # Transpose df2 and set the index to match "Isotopologues" in df1
+        df2 = SSIM_df.T
+        df2.index.name = "isotopologue"
+
+        # Reset the index for both data frames
+        df1 = evaluation_metrics_df.reset_index()
+        df2 = df2.reset_index()
+
+        # Merge the two data frames based on the "Isotopologues" column
+        merged_df = df1.merge(df2, on="isotopologue")
+        merged_df = merged_df.drop(columns=["index"], errors="ignore")
+        merged_df['SSIM'] = merged_df[[0, 1, 2]].mean(axis=1)
+        merged_df['color'] = np.where(merged_df['Median Rho'] >= 0.6, 'purple', np.where(merged_df['SSIM'] >= 0.35, 'green', 'red'))
+        merged_df = merged_df.sort_values(by=["Median Rho"], ascending=False)
+
+        # Take the statistics df and provide a list of successfully predicted metabolites
+        _, metab_dict = self.relative_metabolite_success(isotopologue_metrics = merged_df, all_isotopologues=list(merged_df["isotopologue"]), plot = False)
+
+        return metab_dict
     # <==================================================== EVALUATION ===================================================================>
     # ===================================================================================================================================
 

@@ -270,21 +270,30 @@ def ion_count_isotopolouge_corr(ion_counts, isotopolouges, ion_index, iso_start_
     plt.show()
 
 
-def median_rho_feature_plot(data, cutoff = 0.6):
-    bar_df = (data
-          .sort_values(by=["median_rho"], ascending=False)
-          )
-    plt.rcParams['figure.figsize'] = [20, 18]
-    plt.bar(bar_df["isotopologue"], bar_df["median_rho"], color=bar_df["color"])
-    # Add a horizontal line at the cutoff value
-    plt.axhline(y=cutoff, color='red', linestyle='--', linewidth=2.5, label=f'Cutoff ({cutoff})')
+def median_rho_feature_plot(data, cutoff = 0.6, rho_title = "median_rho"):
+    bar_df = (data.sort_values(by=[rho_title], ascending=False))
+    plt.rcdefaults() 
+    plt.rcParams['figure.figsize'] = [10, 7]
 
-    plt.xlabel("isotopologue")
-    plt.ylabel("median rho")
-    plt.title("median rho for isotopolouges")
-    plt.xticks(rotation=-90)
+    # Create a figure and axis
+    fig, ax = plt.subplots()
+
+    ax.bar(bar_df["isotopologue"], bar_df[rho_title], width=1, color=bar_df["color"])
+
+    # Add a horizontal line at the cutoff value
+    ax.axhline(y=cutoff, color='red', linestyle='--', linewidth=2.5, label=f'Cutoff ({cutoff})')
+
+    ax.set_xlabel("isotopologue")
+    ax.set_ylabel("median rho")
+    ax.set_title("median rho for isotopolouges")
+    # Set x-axis label to None
+    ax.set(xlabel=None)
+    ax.set_xticklabels([])  # Remove x-axis tick labels
+    plt.xticks(rotation=-45)
     plt.margins(x=0.01)
-    plt.show()
+    plt.grid(False)
+
+
     #plt.savefig(f'{plot_dir}/Isotopologue distribution of significant prediction', format='pdf')
     #plt.close()
 
