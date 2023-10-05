@@ -748,7 +748,7 @@ class IsoLearner:
 
         return pd.DataFrame(evaluation_metrics, columns = metric_names)
 
-    def relative_metabolite_success(self, TIC_metabolite_names = 0, morans_invalid_isos = 0, isotopologue_metrics= 0, all_isotopologues = 0, num_bars = 51, plot = True):
+    def relative_metabolite_success(self, TIC_metabolite_names = 0, morans_invalid_isos = 0, isotopologue_metrics= 0, all_isotopologues = 0, SSIM_metric = False, num_bars = 51, plot = True):
         '''
         parameters:
             - TIC_metabolite_names: a list of the metabolite names in the total ion counts matrix. The full metabolite list has 353. 
@@ -768,6 +768,8 @@ class IsoLearner:
                 metabs_success_count[metab_name] = [0,0,0]
 
             if row['R2'] >= 0.3:
+                metabs_success_count[metab_name][0] += 1
+            elif SSIM_metric and row['SSIM'] >= 0.35:
                 metabs_success_count[metab_name][0] += 1
             else:
                 metabs_success_count[metab_name][1] += 1
@@ -924,9 +926,10 @@ class IsoLearner:
         merged_df = merged_df.sort_values(by=["Median Rho"], ascending=False)
 
         # Take the statistics df and provide a list of successfully predicted metabolites
-        _, metab_dict = self.relative_metabolite_success(isotopologue_metrics = merged_df, all_isotopologues=list(merged_df["isotopologue"]), plot = False)
+        _, metab_dict = self.relative_metabolite_success(isotopologue_metrics = merged_df, all_isotopologues=list(merged_df["isotopologue"]), SSIM_metric=True, plot = False)
+        successfully_predicted_metabs = [metab for metab in list(metab_dict.keys()) if metab_dict[metab][0] >= 1]
 
-        return metab_dict
+        return successfully_predicted_metabs
     # <==================================================== EVALUATION ===================================================================>
     # ===================================================================================================================================
 
