@@ -909,7 +909,7 @@ class IsoLearner:
 
         return metab_dict, df
 
-    def get_successful_metabolites(self, evaluation_metrics_df, SSIM_df):
+    def get_successful_metabolites(self, evaluation_metrics_df, SSIM_df, return_df = False):
         # Transpose df2 and set the index to match "Isotopologues" in df1
         df2 = SSIM_df.T
         df2.index.name = "isotopologue"
@@ -925,6 +925,9 @@ class IsoLearner:
         merged_df['color'] = np.where(merged_df['Median Rho'] >= 0.6, 'purple', np.where(merged_df['SSIM'] >= 0.35, 'green', 'red'))
         merged_df = merged_df.sort_values(by=["Median Rho"], ascending=False)
 
+        if return_df:
+            return merged_df
+            
         # Take the statistics df and provide a list of successfully predicted metabolites
         _, metab_dict = self.relative_metabolite_success(isotopologue_metrics = merged_df, all_isotopologues=list(merged_df["isotopologue"]), SSIM_metric=True, plot = False)
         successfully_predicted_metabs = [metab for metab in list(metab_dict.keys()) if metab_dict[metab][0] >= 1]
