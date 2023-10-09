@@ -927,7 +927,7 @@ class IsoLearner:
 
         if return_df:
             return merged_df
-            
+
         # Take the statistics df and provide a list of successfully predicted metabolites
         _, metab_dict = self.relative_metabolite_success(isotopologue_metrics = merged_df, all_isotopologues=list(merged_df["isotopologue"]), SSIM_metric=True, plot = False)
         successfully_predicted_metabs = [metab for metab in list(metab_dict.keys()) if metab_dict[metab][0] >= 1]
@@ -1330,12 +1330,14 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
             Dense(128, input_dim = self.input_dim, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
             
+            '''
             Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
             Dropout(0.25),
             
             Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
+            '''
             
             Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
