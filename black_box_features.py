@@ -77,7 +77,7 @@ def multivariate_covariance_metric(X, Y, Z, reg_func_X, reg_func_Y):
     '''
     X - 100K x 1
     Y - 100K x 100
-    Z - 100K x 2
+    Z - 100K x 2 (or just more than one)
     '''
     dim_x = X.shape[1] # 1
     dim_y = Y.shape[1] # 100 (for now)

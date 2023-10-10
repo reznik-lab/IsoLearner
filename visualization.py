@@ -452,13 +452,14 @@ def plot_metab_and_isos(ion_df, iso_df, coord_df = None, metab_to_plot = "", tit
     # List of only children isotopologue names
     iso_list = [iso for iso in full_isotopologues_names if metab_to_plot in iso]
 
+    print(type(coord_df), type(ion_df[metab_to_plot]), type(iso_df[iso_list]))
     # Concatenate the dataframes to be able to use the plot_multiple_brains functionality
     plotting_df = pd.concat([coord_df, ion_df[metab_to_plot], iso_df[iso_list]], axis=1)
 
     plot_title = title if title else f"{metab_to_plot} + Isotopologues"
     plot_multiple_brains(plotting_df, title = plot_title, indices_to_plot = [x for x in range(2,len(plotting_df.columns))])
 
-    return None
+    # return None
 
 # ================================================== RESULTS ==================================================
 
