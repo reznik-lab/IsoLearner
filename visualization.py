@@ -603,6 +603,8 @@ def cross_validation_results(ground_replicates, predicted_replicates, coords_df 
     '''
     For a specific isotopologue, plot the ground truth vs predicted for each replicate.
     '''
+
+
     # If a list of dataframes with coordinates are not provided, generate the filepath list and pull the data ourself
     if not coords_df:
         print("Generating coord files")
@@ -619,9 +621,14 @@ def cross_validation_results(ground_replicates, predicted_replicates, coords_df 
 
         coords_df[i]['x'] = coords_df[i]['x'] - x_min
         coords_df[i]['y'] = coords_df[i]['y'] - y_min
-        
+        print(coords_df[i]['x'].isna().sum(), coords_df[i]['y'].isna().sum())
+
+        ground_replicates[i] = ground_replicates[i].drop(labels = ['x', 'y'], axis = 1, errors = 'ignore')
+        predicted_replicates[i] = predicted_replicates[i].drop(labels = ['x', 'y'], axis = 1, errors = 'ignore')
+
         ground_replicates[i][['x', 'y']] = coords_df[i][['x', 'y']]
         predicted_replicates[i][['x', 'y']] = coords_df[i][['x', 'y']]
+        print(ground_replicates[i]['x'].isna().sum(), ground_replicates[i]['y'].isna().sum())
 
         x_range = x_max - x_min + 1
         y_range = y_max - y_min + 1
@@ -655,7 +662,8 @@ def cross_validation_results(ground_replicates, predicted_replicates, coords_df 
                 continue
             
             plotting_df = ground_replicates[plt_row][[iso_to_plot, 'x', 'y']] if plt_column == 0 else predicted_replicates[plt_row][[iso_to_plot, 'x', 'y']]
-            
+            print(plotting_df['x'].isna().sum(), plotting_df['y'].isna().sum())
+
             brain = np.zeros((coord_ranges[plt_row][0],coord_ranges[plt_row][1])) 
             for index, row in plotting_df.iterrows():
                 brain[int(row['x']), int(row['y'])] = row[iso_to_plot]

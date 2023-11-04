@@ -40,7 +40,8 @@ class IsoLearner:
                 morans_strat = 1, 
                 morans_cutoff = 0.6,
                 min_replicates = 3, 
-                shared_morans_file = False):
+                shared_morans_file = False,
+                KIDNEY_ALSO = False):
         
         '''
         Parameters:
@@ -65,6 +66,7 @@ class IsoLearner:
         self.morans_cutoff = morans_cutoff
         self.min_replicates = min_replicates
         self.shared_morans_file = shared_morans_file
+        self.KIDNEY_ALSO = KIDNEY_ALSO
 
         print("Initializing IsoLearner")
 
@@ -111,6 +113,10 @@ class IsoLearner:
         if self.tracer == 'BG' or self.tracer == 'B3HB':
             isotopologues_paths.extend([f'{self.absolute_data_path}/{self.relative_data_path}/{self.tracer}-KD-M{i+1}-{iso_path}.csv' for i in range(3)])
             ion_counts_paths.extend([f'{self.absolute_data_path}/{self.relative_data_path}/{self.tracer}-KD-M{i+1}-{ion_path}.csv' for i in range(3)])
+
+            if self.KIDNEY_ALSO:
+                isotopologues_paths.extend([f'{self.absolute_data_path}/{self.relative_data_path}/K3HB-ND-M{i+1}-{iso_path}.csv' for i in range(3)])
+                ion_counts_paths.extend([f'{self.absolute_data_path}/{self.relative_data_path}/K3HB-ND-M{i+1}-{ion_path}.csv' for i in range(3)])
 
         return ion_counts_paths, isotopologues_paths
 
@@ -626,6 +632,68 @@ class IsoLearner:
         
         return 0 
 
+    def cross_tissue_training(self, checkpoints_dir_label = "3HB", checkpoints_path = "./saved-weights", EPOCHS = 100):
+        '''
+        Performs cross validation for isotopologue prediction model. Trains the model as many times as there are replicates in the dataset, holding out a different 
+        replicate for testing each time. The saved weights for each model checkpoint is saved in the directory 
+
+        Parameters:
+            - all_invalid_isos (list): list of list, where each sublist contains the indices of isotopologues that did not pass the Moran's I test for a given replicate
+            - data_path (string): relative path from main data directory to the directory containing all of the relevant data files. (Assumes you're already in the primary data directory)
+            - FML (bool): flag indicating whether to use the partial metabolite list (19 metabs) or full metabolite list 
+            - tracer (string): prefix for the tracer whose data you want to generate [Glucose: BG, 3-Hydroxybutyrate: B3HB | B15NGln, B15NLeu, B15NNH4Cl]
+                - Precuror 'B' stands for brain data, 'G' for Glucose
+            - checkpoints_dir_label (string): string to append to the end of checkpoints directory name (dir name will be 'cross-validation-{checkpoints_dir_label}')
+            - checkpoints_path (string): path to directory in which to house the checkpoint directory
+        '''
+        print("WE ARE IN THIS FUNCTION")
+
+        # Create a directory wherever you are saving weights to hold subdirectories for each replicates checkpoints
+        full_checkpoint_dir = f'{checkpoints_path}/cross-validation-{checkpoints_dir_label}'
+        if os.path.exists(full_checkpoint_dir):
+            # Check if the directory is empty
+            if not os.listdir(full_checkpoint_dir):
+                # Directory is empty, delete it
+                try:
+                    os.rmdir(full_checkpoint_dir)
+                    print(f"Empty directory '{full_checkpoint_dir}' has been deleted.")
+                except OSError as e:
+                    print(f"Error deleting directory '{full_checkpoint_dir}': {e}")
+            else:
+                print(f"Directory '{full_checkpoint_dir}' is not empty. Aborting training.")
+                return 0
+
+        print("Creating checkpoint directory")
+        os.mkdir(full_checkpoint_dir)
+
+        # Create training and testing sets - pull one replicate out of the set 
+        training_features, training_targets = self.create_full_dataset(self.clean_ion_data[0:5], self.clean_iso_data[0:5], holdout=False)
+        print(f"Training on brain data. # samples = {training_features.shape[0]}")
+
+        # Train the model 
+        checkpoint = f'holdout'
+        os.mkdir(f'{checkpoints_path}/cross-validation-{checkpoints_dir_label}/{checkpoint}')
+        history = self.training(training_features, training_targets, f'{full_checkpoint_dir}/{checkpoint}/checkpoint', train = True, TRAIN_ENTIRE_BRAIN = True, EPOCHS = EPOCHS, BATCH_SIZE = 128)
+
+        training_loss = history.history['loss']
+        test_loss = history.history['val_loss']
+
+        # Create count of the number of epochs
+        epoch_count = range(1, len(training_loss) + 1)
+
+        # Visualize loss history
+        plt.figure(figsize=(3,3))
+        plt.plot(epoch_count, training_loss, 'r--')
+        plt.plot(epoch_count, test_loss, 'b-')
+        plt.legend(['Training Loss', 'Test Loss'])
+        plt.title(f'Holdout: kidney data')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.ylim([0, 1])
+        plt.show();
+
+        return 0 
+
     # <==================================================== TRAINING ===================================================================>
     # ===================================================================================================================================
 
@@ -828,6 +896,23 @@ class IsoLearner:
             # plot_individual_isotopolouges_2(testing_targets, predicted, list(testing_targets.columns), specific_to_plot = sorted_iso_names[i][0:25], grid_size = 5, ranked = True)
    
         return ground_truth, predictions
+
+    def cross_tissue_testing(self, checkpoints_dir_label = '3HB', checkpoints_path = "./saved-weights"):
+        checkpoints_dir = f'{checkpoints_path}/cross-validation-{checkpoints_dir_label}'
+    
+        ground_truth = []
+        predictions = []
+        sorted_iso_names = []
+    
+        for i in range(len(self.clean_ion_data[6:])):
+            # Create training and testing sets - pull one replicate out of the set 
+            print(f"Testing with replicate {i} heldout. # samples = {self.clean_ion_data[5 + i].shape[0]}")
+            checkpoint_path = checkpoints_dir + f'/holdout/checkpoint'
+            predicted = self.predict(self.clean_ion_data[5 + i], self.clean_iso_data[5 + i], checkpoint_path = checkpoint_path)
+            ground_truth.append(self.clean_iso_data[5 + i])
+            predictions.append(predicted)
+   
+        return ground_truth, predictions
    
     def cross_validation_eval_metrics(self, ground_replicates, predicted_replicates, num_bars = 88, plot = True, SSIM = False):
         '''
@@ -1015,14 +1100,18 @@ class IsoLearner:
                     path_parts = file_path.split('/')
                     # Extract the relevant parts and join them
                     new_path = '/'.join(path_parts[4:8]).replace("-isotopolouges-ranks.csv", "\n")
-                    # Get the index of the file in the txt
-                    path_index = lines.index(new_path)
-                    # Extract the list part from the string
-                    list_str = lines[path_index+1].split(":")[1].strip()
-                    # Convert the string representation of the list to a Python list
-                    valid_isotopologues_list = eval(list_str)
-                    # print(valid_isotopologues_list)
-                    valid_iso_lists.append(valid_isotopologues_list)
+
+                    if new_path in lines:
+                        # Get the index of the file in the txt
+                        path_index = lines.index(new_path)
+                        # Extract the list part from the string
+                        list_str = lines[path_index+1].split(":")[1].strip()
+                        # Convert the string representation of the list to a Python list
+                        valid_isotopologues_list = eval(list_str)
+                        # print(valid_isotopologues_list)
+                        valid_iso_lists.append(valid_isotopologues_list)
+                    else:
+                        print(f"Skipping: {new_path}")
 
                     self.valid_iso_lists = valid_iso_lists
 
@@ -1329,15 +1418,6 @@ class NeuralNetRegressorY(BaseEstimator, RegressorMixin):
             # Input Layer
             Dense(128, input_dim = self.input_dim, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
-            
-            '''
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            Dropout(0.25),
-            
-            Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
-            BatchNormalization(),
-            '''
             
             Dense(256, kernel_initializer='he_uniform', activation='relu',kernel_regularizer=l2(self.lambda_val)),
             BatchNormalization(),
